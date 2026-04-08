@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka FullScreen Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        :root {
+            --primary: #9ac8e2;
+            --glass: rgba(255, 255, 255, 0.1);
+            --glass-heavy: rgba(10, 10, 25, 0.7);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* 全屏背景画布 */
+        #visCanvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: 1;
+        }
+
+        /* 界面层 */
+        .ui-overlay {
+            position: relative;
+            z-index: 10;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px;
+            pointer-events: none; /* 允许点击下方的 Canvas 触发特效 */
+        }
+
+        .ui-overlay * { pointer-events: auto; }
+
+        /* 顶部信息 */
+        .top-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .track-card {
+            background: var(--glass-heavy);
+            backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            gap: 20px;
+            max-width: 450px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .art-box {
+            width: 100px; height: 100px;
+            border-radius: 12px;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .art-img { width: 100%; height: 100%; object-fit: cover; }
+
+        .info-text h1 { font-size: 24px; margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+        .info-text p { color: var(--primary); font-size: 16px; opacity: 0.8; }
+
+        /* 底部控制台 */
+        .bottom-console {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--glass-heavy);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            padding: 20px 40px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .progress-container { margin-bottom: 15px; }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; box-shadow: 0 0 15px var(--primary); }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-group { display: flex; align-items: center; gap: 20px; }
+        .btn {
+            background: none; border: none; color: white; cursor: pointer;
+            font-size: 20px; opacity: 0.7; transition: 0.3s;
+        }
+        .btn:hover { opacity: 1; transform: scale(1.1); }
+        .btn-play {
+            width: 60px; height: 60px; background: var(--primary);
+            color: black; border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; font-size: 24px; opacity: 1;
+        }
+
+        .btn.active { color: var(--primary); opacity: 1; text-shadow: 0 0 10px var(--primary); }
+
+        /* 隐藏功能键 */
+        #folderInput { display: none; }
+
+        /* HUD */
+        .hud { position: fixed; bottom: 20px; right: 20px; font-size: 12px; color: rgba(255,255,255,0.3); text-align: right; }
+    </style>
+</head>
+<body>
+
+    <canvas id="visCanvas"></canvas>
+
+    <div class="ui-overlay">
+        <!-- 顶部音乐信息 -->
+        <div class="top-info">
+            <div class="track-card">
+                <div class="art-box">
+                    <img id="albumArt" class="art-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                </div>
+                <div class="info-text">
+                    <h1 id="songTitle">沉浸模式已就绪</h1>
+                    <p id="songArtist">请按 A 键或载入音乐</p>
+                </div>
+            </div>
+
+            <button class="btn" style="background:var(--glass); padding:10px 20px; border-radius:15px; font-size:14px;" onclick="document.getElementById('folderInput').click()">📁 载入音乐目录</button>
+            <input type="file" id="folderInput" webkitdirectory directory multiple>
+        </div>
+
+        <!-- 底部控制栏 -->
+        <div class="bottom-console">
+            <div class="progress-container">
+                <div class="prog-bg" id="progWrap"><div class="prog-fill" id="progFill"></div></div>
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:8px; color:rgba(255,255,255,0.5); font-family:monospace;">
+                    <span id="timeCur">00:00</span>
+                    <span id="timeTot">00:00</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="btn-group">
+                    <button class="btn" id="btnShuffle" title="随机播放 (手柄 X)">🔀</button>
+                    <button class="btn" id="btnPrev">⏮</button>
+                    <button class="btn btn-play" id="btnPlay">▶</button>
+                    <button class="btn" id="btnNext">⏭</button>
+                </div>
+                
+                <div style="font-size:14px; opacity:0.6;">
+                    <span id="gamepadStatus">⌨️ 键盘/鼠标模式</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="hud" id="hudInfo">
+        LS: 粒子位置 | RS: 画面色调 | RT: 喷射强度
+    </div>
+
+    <script>
+        /** === 核心状态 === */
+        const audio = new Audio(); audio.crossOrigin = "anonymous";
+        let audioCtx, analyser, dataArray, canvas, ctx;
+        let playlist = [], currentIndex = -1, isShuffle = false;
+        let particles = [], shockwaves = [];
+        let gamepadConnected = false, prevBtns = new Array(17).fill(false);
+        
+        // 可视化变量
+        let currentHue = 200;
+        let emitterX = window.innerWidth / 2;
+        let emitterY = window.innerHeight / 2;
+        let rtValue = 0;
+
+        /** === 画布初始化 === */
+        function initCanvas() {
+            canvas = document.getElementById('visCanvas');
+            ctx = canvas.getContext('2d');
+            window.onresize = () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            };
+            window.onresize();
+        }
+
+        class Particle {
+            constructor(x, y, vx, vy, color, size) {
+                this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+                this.color = color; this.size = size; this.life = 1;
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy;
+                this.life -= 0.015;
+                this.size *= 0.98;
+            }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        /** === 可视化主循环 === */
+        function animate() {
+            requestAnimationFrame(animate);
+            // 带有拖尾效果的清除
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                
+                // 1. 绘制全屏频谱 (底部向上)
+                const barWidth = (canvas.width / dataArray.length) * 2;
+                for (let i = 0; i < dataArray.length; i++) {
+                    const val = dataArray[i];
+                    const h = (val / 255) * canvas.height * 0.4;
+                    ctx.fillStyle = `hsla(${currentHue}, 70%, 50%, 0.2)`;
+                    ctx.fillRect(i * barWidth, canvas.height - h, barWidth, h);
+                }
+
+                // 2. 根据低音节奏自动喷发粒子
+                if (dataArray[2] > 200) {
+                    spawnParticles(emitterX, emitterY, 2, `hsl(${currentHue}, 80%, 70%)`);
+                }
+            }
+
+            // 3. 手柄持续喷射
+            if (rtValue > 0.1) {
+                spawnParticles(emitterX, emitterY, rtValue * 5, `hsl(${currentHue}, 100%, 80%)`);
+            }
+
+            // 4. 更新粒子
+            particles = particles.filter(p => {
+                p.update(); p.draw(); return p.life > 0;
+            });
+        }
+
+        function spawnParticles(x, y, amount, color) {
+            for (let i = 0; i < amount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = Math.random() * 5 + 2;
+                particles.push(new Particle(x, y, Math.cos(angle)*spd, Math.sin(angle)*spd, color, Math.random()*6 + 2));
+            }
+        }
+
+        /** === 播放逻辑 === */
+        const playSong = async (idx) => {
+            if (idx < 0 || idx >= playlist.length) return;
+            currentIndex = idx;
+            const song = playlist[idx];
+            audio.src = song.url;
+            
+            document.getElementById('songTitle').innerText = song.title;
+            document.getElementById('songArtist').innerText = song.artist;
+            if(song.art) document.getElementById('albumArt').src = song.art;
+
+            try {
+                await audio.play();
+                if (!audioCtx) {
+                    audioCtx = new AudioContext();
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 512;
+                    const src = audioCtx.createMediaElementSource(audio);
+                    src.connect(analyser); analyser.connect(audioCtx.destination);
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                }
+            } catch (e) { console.log(e); }
+        };
+
+        const goNext = () => {
+            if (isShuffle && playlist.length > 1) {
+                let next;
+                do { next = Math.floor(Math.random() * playlist.length); } while(next === currentIndex);
+                playSong(next);
+            } else {
+                playSong((currentIndex + 1) % playlist.length);
+            }
+        };
+
+        const toggleShuffle = () => {
+            isShuffle = !isShuffle;
+            document.getElementById('btnShuffle').classList.toggle('active', isShuffle);
+            showToast(isShuffle ? "随机播放开启" : "顺序播放开启");
+        };
+
+        /** === 手柄逻辑 === */
+        window.addEventListener("gamepadconnected", (e) => {
+            gamepadConnected = true;
+            document.getElementById('gamepadStatus').innerText = "🎮 Xbox 控制器已连接";
+        });
+
+        function pollGamepad() {
+            const gp = navigator.getGamepads()[0];
+            if (!gp) { requestAnimationFrame(pollGamepad); return; }
+
+            // LS: 移动发射源
+            if (Math.abs(gp.axes[0]) > 0.1) emitterX += gp.axes[0] * 15;
+            if (Math.abs(gp.axes[1]) > 0.1) emitterY += gp.axes[1] * 15;
+            // 边缘限制
+            emitterX = Math.max(0, Math.min(canvas.width, emitterX));
+            emitterY = Math.max(0, Math.min(canvas.height, emitterY));
+
+            // RS: 改变色调
+            if (Math.abs(gp.axes[2]) > 0.1) currentHue = (currentHue + gp.axes[2] * 5) % 360;
+
+            // RT: 喷射强度
+            rtValue = gp.buttons[7].value;
+
+            // 按键
+            const b = gp.buttons.map(x => x.pressed);
+            if (b[0] && !prevBtns[0]) playPause(); // A
+            if (b[2] && !prevBtns[2]) toggleShuffle(); // X
+            if (b[4] && !prevBtns[4]) playSong((currentIndex - 1 + playlist.length) % playlist.length); // LB
+            if (b[5] && !prevBtns[5]) goNext(); // RB
+
+            prevBtns = b;
+            requestAnimationFrame(pollGamepad);
+        }
+
+        /** === 基础功能 === */
+        const playPause = () => audio.paused ? audio.play() : audio.pause();
+        
+        document.getElementById('btnPlay').onclick = playPause;
+        document.getElementById('btnNext').onclick = goNext;
+        document.getElementById('btnPrev').onclick = () => playSong((currentIndex - 1 + playlist.length) % playlist.length);
+        document.getElementById('btnShuffle').onclick = toggleShuffle;
+
+        document.getElementById('folderInput').onchange = async (e) => {
+            const files = Array.from(e.target.files).filter(f => /\.(mp3|flac|wav|m4a)$/i.test(f.name));
+            if(!files.length) return;
+            playlist = [];
+            for (let f of files.slice(0, 20)) { // 优先加载前20首
+                playlist.push(await parseFile(f));
+            }
+            playSong(0);
+        };
+
+        async function parseFile(f) {
+            return new Promise(res => {
+                const url = URL.createObjectURL(f);
+                jsmediatags.read(f, {
+                    onSuccess: t => {
+                        let art = null;
+                        if(t.tags.picture) {
+                            const d = t.tags.picture.data;
+                            let b = ""; for(let i=0; i<d.length; i++) b += String.fromCharCode(d[i]);
+                            art = `data:${t.tags.picture.format};base64,${btoa(b)}`;
+                        }
+                        res({ title: t.tags.title || f.name, artist: t.tags.artist || "未知歌手", url, art });
+                    },
+                    onError: () => res({ title: f.name, artist: "未知歌手", url, art: null })
+                });
+            });
+        }
+
+        audio.ontimeupdate = () => {
+            const p = (audio.currentTime / audio.duration) * 100;
+            document.getElementById('progFill').style.width = p + '%';
+            document.getElementById('timeCur').innerText = formatT(audio.currentTime);
+            document.getElementById('timeTot').innerText = formatT(audio.duration);
+        };
+        audio.onended = goNext;
+
+        function formatT(s) { const m=Math.floor(s/60), sec=Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; }
+        function showToast(m) { 
+            const t = document.createElement('div');
+            t.style = "position:fixed; top:20px; left:50%; transform:translateX(-50%); background:var(--primary); color:black; padding:10px 20px; border-radius:10px; font-weight:bold; z-index:1000;";
+            t.innerText = m; document.body.appendChild(t);
+            setTimeout(() => t.remove(), 2000);
+        }
+
+        initCanvas();
+        animate();
+        pollGamepad();
+    </script>
+</body>
+</html>

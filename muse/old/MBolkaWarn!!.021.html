@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka Player - Gamepad Enhanced</title>
+    <!-- jsmediatags: 提取音频元数据 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        /* ================= 核心变量与重置 ================= */
+        :root {
+            --primary: #9ac8e2;
+            --primary-light: #b4d6ea;
+            --bg-dark: #0a0a1a;
+            --bg-dark-light: #1a1a2e;
+            --text-main: #f0f8ff;
+            --text-sub: #8a8aa0;
+            --glass-bg: rgba(26, 26, 46, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+            --bg-blur: 40px;
+            --curve-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --curve-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-light) 50%, var(--bg-dark) 100%);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        /* ================= 高级动画效果 ================= */
+        @keyframes appFadeIn {
+            from { opacity: 0; transform: translateY(25px) scale(0.96); filter: blur(12px); }
+            to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes floatArt {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            25% { transform: translateY(-8px) rotate(1deg); box-shadow: 0 30px 50px rgba(0,0,0,0.4); }
+            75% { transform: translateY(6px) rotate(-1deg); box-shadow: 0 15px 30px rgba(0,0,0,0.3); }
+        }
+        @keyframes shimmerBar {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        @keyframes glowPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(0,0,0,0.3); }
+            50% { box-shadow: 0 0 35px var(--primary), 0 0 15px rgba(0,0,0,0.4); }
+        }
+        
+        /* 游戏化特效动画 */
+        @keyframes particleExplosion {
+            0% { transform: scale(0.5); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        @keyframes ripple {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+        @keyframes shockwave {
+            0% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(4); opacity: 0; }
+        }
+        @keyframes colorShift {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+        @keyframes controllerVibrate {
+            0%, 100% { transform: translateX(0) rotate(0); }
+            25% { transform: translateX(-2px) rotate(-0.5deg); }
+            75% { transform: translateX(2px) rotate(0.5deg); }
+        }
+
+        /* ================= 动态背景层 ================= */
+        #bg-layer-img, #bg-layer-color {
+            position: fixed; top: -5%; left: -5%; right: -5%; bottom: -5%;
+            z-index: -2; opacity: 0; pointer-events: none;
+            transition: opacity 1.2s var(--curve-smooth), filter 0.5s ease;
+        }
+        #bg-layer-img {
+            background-size: cover; background-position: center;
+            filter: blur(var(--bg-blur)) brightness(0.6) saturate(1.2);
+            transform: scale(1.05);
+        }
+        #bg-layer-color {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--bg-dark) 100%);
+            transition: background 1.2s var(--curve-smooth);
+        }
+        #bg-layer-img.active, #bg-layer-color.active { opacity: 1; }
+
+        /* ================= 播放器主体 ================= */
+        .player-wrapper {
+            width: 96vw; max-width: 1200px; height: 92vh;
+            background: var(--glass-bg);
+            backdrop-filter: blur(35px) saturate(180%);
+            -webkit-backdrop-filter: blur(35px) saturate(180%);
+            border-radius: 32px; border: 1px solid var(--glass-border);
+            box-shadow: var(--glass-shadow);
+            display: flex; flex-direction: column;
+            animation: appFadeIn 1s var(--curve-spring) both;
+            overflow: hidden;
+        }
+
+        /* 头部 */
+        .header {
+            padding: 24px 36px; border-bottom: 1px solid rgba(255,255,255,0.08);
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(10, 10, 26, 0.2); flex-shrink: 0;
+        }
+        .brand { font-size: 24px; font-weight: 800; display: flex; gap: 10px; align-items: center; }
+        .brand i { color: var(--primary); transition: color 0.5s; }
+        .nav-actions { display: flex; gap: 14px; }
+        .btn-glass {
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main); padding: 10px 20px; border-radius: 14px;
+            cursor: pointer; font-weight: 500; font-size: 14px;
+            transition: all 0.3s var(--curve-smooth);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .btn-glass:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); border-color: var(--primary); }
+        .btn-glass.active { background: var(--primary); color: #000; border-color: var(--primary); }
+
+        /* 进度条 */
+        .load-strip-container { height: 4px; background: rgba(255,255,255,0.05); width: 100%; display: none; position: relative; overflow: hidden; flex-shrink: 0;}
+        .load-strip-container.show { display: block; }
+        .load-strip { height: 100%; width: 0%; background: var(--primary); position: relative; transition: width 0.2s; }
+        .load-strip::after {
+            content: ''; position: absolute; inset:0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            animation: shimmerBar 1.5s infinite;
+        }
+
+        /* 内容栅格 - 动态居中 */
+        .content-grid {
+            display: flex; flex: 1; padding: 32px 40px; gap: 40px;
+            overflow: hidden; justify-content: center;
+        }
+
+        .col { display: flex; flex-direction: column; transition: all 0.5s var(--curve-spring); }
+        .col-album { flex: 0 1 380px; align-items: center; justify-content: center; gap: 30px; }
+        .col-controls { flex: 1; max-width: 680px; justify-content: center; gap: 32px; }
+
+        /* 专辑区 */
+        .art-box {
+            width: 340px; height: 340px; border-radius: 28px; overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+            animation: floatArt 8s ease-in-out infinite; flex-shrink: 0;
+        }
+        .art-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.8s var(--curve-smooth); }
+        .art-box:hover .art-img { transform: scale(1.06); }
+        .track-info { text-align: center; width: 100%; }
+        .track-title { font-size: 32px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; text-shadow: 0 4px 12px rgba(0,0,0,0.3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+        .track-artist { font-size: 18px; color: var(--text-sub); font-weight: 500; }
+
+        /* 控制区 */
+        .visual-area {
+            display: flex; flex-direction: column; gap: 20px; width: 100%;
+        }
+        .vis-canvas { 
+            width: 100%; height: 150px; background: rgba(0,0,0,0.2); 
+            border-radius: 16px; position: relative; overflow: hidden;
+        }
+        .gamepad-visual {
+            position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+            pointer-events: none; z-index: 1;
+        }
+        .particle { position: absolute; pointer-events: none; z-index: 2; }
+        .ripple { position: absolute; border: 2px solid var(--primary); border-radius: 50%; pointer-events: none; z-index: 3; }
+        .shockwave { position: absolute; border: 1px solid rgba(255,255,255,0.8); border-radius: 50%; pointer-events: none; z-index: 3; }
+        
+        .progress-area { width: 100%; cursor: pointer; padding: 10px 0; }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; position: relative; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; position: relative; transition: background 0.5s; }
+        .prog-fill::after {
+            content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%) scale(0);
+            width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s var(--curve-spring); box-shadow: 0 0 10px var(--primary);
+        }
+        .progress-area:hover .prog-fill::after { transform: translateY(-50%) scale(1); }
+        .time-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sub); margin-top: 8px; font-weight: 500; }
+
+        .btn-group-main { display: flex; justify-content: center; align-items: center; gap: 24px; }
+        .btn-ctrl {
+            width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04); color: #fff; font-size: 20px; cursor: pointer;
+            transition: all 0.3s var(--curve-spring); display: flex; justify-content: center; align-items: center;
+        }
+        .btn-ctrl:hover { background: rgba(255,255,255,0.12); transform: scale(1.08); border-color: var(--primary); color: var(--primary); }
+        .btn-play { width: 84px; height: 84px; font-size: 32px; border: none; background: var(--primary); color: #000; animation: glowPulse 3s infinite; }
+        .btn-play:hover { transform: scale(1.08); filter: brightness(1.1); color: #000; }
+
+        .btn-group-sub { display: flex; justify-content: space-between; align-items: center; }
+        .mode-toggles { display: flex; gap: 12px; }
+        .btn-mode { width: 46px; height: 46px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #fff; cursor: pointer; transition: 0.3s; }
+        .btn-mode.active { background: var(--primary); color: #000; border-color: var(--primary); }
+        .vol-control { display: flex; align-items: center; gap: 12px; flex: 1; margin-left: 24px; background: rgba(0,0,0,0.2); padding: 12px 18px; border-radius: 16px; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: var(--primary); margin-top: -5px; cursor: pointer; transition: background 0.5s; box-shadow: 0 2px 5px rgba(0,0,0,0.5);}
+
+        /* 手柄状态显示 */
+        .gamepad-status-panel {
+            background: rgba(0,0,0,0.3); border-radius: 16px; padding: 15px; margin-top: 10px;
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+        }
+        .gamepad-status-item { display: flex; flex-direction: column; align-items: center; }
+        .gamepad-status-label { font-size: 12px; color: var(--text-sub); margin-bottom: 5px; }
+        .gamepad-status-value { 
+            font-size: 16px; font-weight: 600; color: var(--primary); 
+            text-shadow: 0 0 8px rgba(154, 200, 226, 0.5);
+        }
+        .gamepad-status-bar {
+            width: 100%; height: 6px; background: rgba(255,255,255,0.1); 
+            border-radius: 3px; margin-top: 5px; overflow: hidden;
+        }
+        .gamepad-status-bar-fill {
+            height: 100%; background: var(--primary); border-radius: 3px;
+            width: 0%; transition: width 0.1s;
+        }
+
+        /* 页脚 */
+        .footer {
+            padding: 16px 36px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px; color: var(--text-sub); display: flex; justify-content: space-between; flex-shrink: 0;
+        }
+
+        /* ================= 模态框体系 (弹窗) ================= */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.4s var(--curve-smooth); z-index: 100;
+        }
+        .modal-overlay.open { opacity: 1; pointer-events: auto; }
+        
+        .modal-content {
+            background: rgba(20,25,40,0.85); border: 1px solid rgba(255,255,255,0.1); border-radius: 28px;
+            padding: 32px; width: 450px; max-width: 90vw; max-height: 85vh;
+            transform: scale(0.9); transition: transform 0.4s var(--curve-spring); display: flex; flex-direction: column;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5); overflow-y: auto;
+        }
+        .modal-overlay.open .modal-content { transform: scale(1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
+        /* 设置框样式 */
+        .drawer-box { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px;}
+        .drawer-title { font-size: 15px; color: var(--text-sub); margin-bottom: 14px; font-weight: 600; }
+        .hotkey-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px; font-size: 13px; color: var(--text-sub); line-height: 1.6; }
+        .hotkey-grid kbd { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff; font-family: monospace;}
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translate(-50%, 50px);
+            background: rgba(20,25,40,0.95); color: #fff; border: 1px solid rgba(255,255,255,0.1);
+            padding: 14px 28px; border-radius: 30px; font-weight: 500; font-size: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4); opacity: 0; transition: all 0.4s var(--curve-spring); z-index: 1000;
+        }
+        .toast.show { transform: translate(-50%, 0); opacity: 1; }
+        input[type="file"] { display: none; }
+        
+        @media (max-width: 1024px) {
+            .content-grid { flex-direction: column; overflow-y: auto; padding: 20px; align-items: center; }
+            .col-album { flex: 0 0 auto; width: 100%; max-width: 380px;}
+            .col-controls { flex: 0 0 auto; width: 100%; max-width: 680px;}
+            .player-wrapper { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+            .gamepad-status-panel { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 动态背景层 -->
+    <div id="bg-layer-img"></div>
+    <div id="bg-layer-color"></div>
+
+    <!-- 播放器主体 -->
+    <div class="player-wrapper">
+        <div class="header">
+            <div class="brand"><i id="logoIcon">🎮</i> Gamepad Player</div>
+            <div class="nav-actions">
+                <button class="btn-glass" id="btnSettings"><i>⚙️</i> 设置</button>
+                <button class="btn-glass" id="btnLoadFolder" style="background: var(--primary); color: #000; border:none;"><i>📁</i> 载入音乐</button>
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+            </div>
+        </div>
+
+        <div class="load-strip-container" id="loadWrap"><div class="load-strip" id="loadBar"></div></div>
+
+        <div class="content-grid">
+            <!-- 左侧：专辑 -->
+            <div class="col col-album">
+                <div class="art-box">
+                    <img id="albumArt" class="art-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                </div>
+                <div class="track-info">
+                    <div class="track-title" id="songTitle">Gamepad Player</div>
+                    <div class="track-artist" id="songArtist">连接Xbox手柄开始体验</div>
+                </div>
+            </div>
+
+            <!-- 中部：控制 -->
+            <div class="col col-controls">
+                <div class="visual-area">
+                    <canvas class="vis-canvas" id="spectrumCanvas"></canvas>
+                    <div id="gamepadVisual"></div>
+                </div>
+                
+                <div>
+                    <div class="progress-area" id="progArea">
+                        <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+                    </div>
+                    <div class="time-labels">
+                        <span id="timeCur">0:00</span><span id="timeTot">0:00</span>
+                    </div>
+                </div>
+                
+                <div class="btn-group-main">
+                    <button class="btn-ctrl" id="btnPrev">⏮</button>
+                    <button class="btn-ctrl btn-play" id="btnPlay">▶</button>
+                    <button class="btn-ctrl" id="btnNext">⏭</button>
+                </div>
+                
+                <div class="btn-group-sub">
+                    <div class="mode-toggles">
+                        <button class="btn-mode active" id="btnSeq" title="顺序播放">⇄</button>
+                        <button class="btn-mode" id="btnRnd" title="随机播放">🔀</button>
+                    </div>
+                    <div class="vol-control">
+                        <span>🔊</span>
+                        <input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.7">
+                    </div>
+                </div>
+                
+                <!-- 手柄状态显示 -->
+                <div class="gamepad-status-panel" id="gamepadPanel">
+                    <div class="gamepad-status-item">
+                        <div class="gamepad-status-label">左摇杆 X</div>
+                        <div class="gamepad-status-value" id="stickLX">0.00</div>
+                        <div class="gamepad-status-bar"><div class="gamepad-status-bar-fill" id="stickLXBar"></div></div>
+                    </div>
+                    <div class="gamepad-status-item">
+                        <div class="gamepad-status-label">左摇杆 Y</div>
+                        <div class="gamepad-status-value" id="stickLY">0.00</div>
+                        <div class="gamepad-status-bar"><div class="gamepad-status-bar-fill" id="stickLYBar"></div></div>
+                    </div>
+                    <div class="gamepad-status-item">
+                        <div class="gamepad-status-label">LT 扳机</div>
+                        <div class="gamepad-status-value" id="triggerLT">0.00</div>
+                        <div class="gamepad-status-bar"><div class="gamepad-status-bar-fill" id="triggerLTBar"></div></div>
+                    </div>
+                    <div class="gamepad-status-item">
+                        <div class="gamepad-status-label">RT 扳机</div>
+                        <div class="gamepad-status-value" id="triggerRT">0.00</div>
+                        <div class="gamepad-status-bar"><div class="gamepad-status-bar-fill" id="triggerRTBar"></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="footer">
+            <div id="fileInfo">等待载入音乐</div>
+            <div id="gamepadStatus">⌨️ 等待手柄接入...</div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;">游戏手柄设置</h2>
+                <button class="btn-glass" id="btnCloseSettings" style="padding: 6px 12px;">关闭</button>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">UI 视觉引擎</div>
+                <button class="btn-glass" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">开启取色模式</button>
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px;">背景模糊强度: <span id="blurVal">40px</span></div>
+                <input type="range" id="blurSlider" min="0" max="100" value="40">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">Xbox手柄控制</div>
+                <div class="hotkey-grid">
+                    <span><kbd>A</kbd></span> <span>播放/暂停</span>
+                    <span><kbd>B</kbd></span> <span>关闭窗口</span>
+                    <span><kbd>LB</kbd>/<kbd>RB</kbd></span> <span>上一首/下一首</span>
+                    <span><kbd>X</kbd>/<kbd>Y</kbd></span> <span>顺序/随机模式</span>
+                    <span><kbd>十字键 ↑↓</kbd></span> <span>音量控制</span>
+                    <span><kbd>左摇杆</kbd></span> <span>控制频谱波纹方向</span>
+                    <span><kbd>右摇杆</kbd></span> <span>控制粒子发射位置</span>
+                    <span><kbd>LT/RT</kbd></span> <span>控制特效强度与颜色</span>
+                    <span><kbd>Menu</kbd></span> <span>打开此设置窗口</span>
+                </div>
+                <div style="margin-top: 10px; font-size: 12px; color: var(--primary);">🎮 任意按键都会触发可视化特效！</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toastMsg"></div>
+
+    <script>
+        /** === 核心状态 === */
+        const audio = new Audio(); audio.crossOrigin = "anonymous";
+        let audioCtx, analyser, source, dataArray, spectrumCtx;
+        let playlist = [], playHistory = [];
+        let currentIndex = -1, isPlaying = false, isShuffle = false;
+        let gamepadConnected = false, prevPadBtns = [];
+
+        // 视图与偏好配置
+        let cfg = { colorMode: false, customBgImg: null, customBgColor: null, blurAmt: 40, defaultColor: '#9ac8e2' };
+        let currentAlbumColor = null, hasCurrentAlbumArt = false;
+
+        // 游戏化特效系统
+        let particles = [];
+        let ripples = [];
+        let shockwaves = [];
+        let currentHue = 0;
+        let leftStickX = 0, leftStickY = 0, rightStickX = 0, rightStickY = 0;
+        let leftTrigger = 0, rightTrigger = 0;
+        let lastButtonPressTime = 0;
+        let colorShiftActive = false;
+        
+        // DOM 引用
+        const el = {
+            folderIn: document.getElementById('folderInput'), btnLoad: document.getElementById('btnLoadFolder'),
+            btnPlay: document.getElementById('btnPlay'), btnPrev: document.getElementById('btnPrev'), btnNext: document.getElementById('btnNext'),
+            progArea: document.getElementById('progArea'), progFill: document.getElementById('progFill'),
+            timeCur: document.getElementById('timeCur'), timeTot: document.getElementById('timeTot'), volSlider: document.getElementById('volSlider'),
+            title: document.getElementById('songTitle'), artist: document.getElementById('songArtist'), artImg: document.getElementById('albumArt'),
+            toast: document.getElementById('toastMsg'), loadBar: document.getElementById('loadBar'), loadWrap: document.getElementById('loadWrap'),
+            btnSeq: document.getElementById('btnSeq'), btnRnd: document.getElementById('btnRnd'),
+            padStatus: document.getElementById('gamepadStatus'), fileInfo: document.getElementById('fileInfo'),
+            settingsModal: document.getElementById('settingsModal'), gamepadPanel: document.getElementById('gamepadPanel'),
+            stickLX: document.getElementById('stickLX'), stickLY: document.getElementById('stickLY'),
+            stickLXBar: document.getElementById('stickLXBar'), stickLYBar: document.getElementById('stickLYBar'),
+            triggerLT: document.getElementById('triggerLT'), triggerRT: document.getElementById('triggerRT'),
+            triggerLTBar: document.getElementById('triggerLTBar'), triggerRTBar: document.getElementById('triggerRTBar'),
+            gamepadVisual: document.getElementById('gamepadVisual')
+        };
+
+        /** === 工具与持久化 === */
+        const showToast = (msg) => { el.toast.innerHTML = msg; el.toast.classList.add('show'); setTimeout(() => el.toast.classList.remove('show'), 2500); };
+        const formatTime = (sec) => { if (!sec || isNaN(sec)) return '0:00'; const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s.toString().padStart(2, '0')}`; };
+        const decodeText = (str) => { if (!str) return ''; let s = str.replace(/\\u([0-9a-fA-F]{4})/g, (m, g) => String.fromCharCode(parseInt(g, 16))); const txt = document.createElement("textarea"); txt.innerHTML = s; return txt.value; };
+        
+        const saveSettings = () => {
+            try { localStorage.setItem('MBolka_Cfg', JSON.stringify({ colorMode: cfg.colorMode, blurAmt: cfg.blurAmt, vol: audio.volume, isShuffle: isShuffle })); } catch(e) {}
+        };
+        const loadSettings = () => {
+            try {
+                const stored = JSON.parse(localStorage.getItem('MBolka_Cfg'));
+                if (stored) {
+                    cfg.colorMode = stored.colorMode; cfg.blurAmt = stored.blurAmt; audio.volume = stored.vol ?? 0.7; isShuffle = stored.isShuffle;
+                    el.volSlider.value = audio.volume; document.getElementById('blurSlider').value = cfg.blurAmt;
+                    document.getElementById('blurVal').textContent = `${cfg.blurAmt}px`; updateModeUI(); updateSettingsUI();
+                }
+            } catch(e) { audio.volume = 0.7; }
+        };
+
+        const extractColor = (imgSrc) => {
+            return new Promise((resolve) => {
+                if (!imgSrc || imgSrc.startsWith('data:image/svg')) return resolve(null);
+                const img = new Image();
+                img.onload = () => {
+                    const cvs = document.createElement('canvas'); cvs.width = 32; cvs.height = 32;
+                    const ctx = cvs.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, 32, 32);
+                    try {
+                        const data = ctx.getImageData(0, 0, 32, 32).data; let r=0, g=0, b=0, count=0;
+                        for(let i=0; i<data.length; i+=16) { if(data[i]>20 && data[i]<235) { r+=data[i]; g+=data[i+1]; b+=data[i+2]; count++; } }
+                        resolve(count > 0 ? `rgb(${~~(r/count)},${~~(g/count)},${~~(b/count)})` : null);
+                    } catch(e) { resolve(null); }
+                }; img.onerror = () => resolve(null); img.src = imgSrc;
+            });
+        };
+
+        /** === 游戏化特效系统 === */
+        class Particle {
+            constructor(x, y, velocityX, velocityY, size, color, life) {
+                this.x = x; this.y = y;
+                this.velocityX = velocityX; this.velocityY = velocityY;
+                this.size = size; this.color = color; this.life = life; this.maxLife = life;
+            }
+            
+            update() {
+                this.x += this.velocityX; this.y += this.velocityY;
+                this.life--;
+                this.size *= 0.98;
+                return this.life > 0;
+            }
+            
+            draw(ctx) {
+                ctx.globalAlpha = this.life / this.maxLife;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+        
+        class Ripple {
+            constructor(x, y, color) {
+                this.x = x; this.y = y; this.radius = 5; this.color = color; this.life = 60;
+            }
+            
+            update() {
+                this.radius += 3; this.life--;
+                return this.life > 0;
+            }
+            
+            draw(ctx) {
+                ctx.globalAlpha = this.life / 60;
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+        
+        class Shockwave {
+            constructor(x, y) {
+                this.x = x; this.y = y; this.radius = 10; this.life = 30;
+            }
+            
+            update() {
+                this.radius += 8; this.life--;
+                return this.life > 0;
+            }
+            
+            draw(ctx) {
+                ctx.globalAlpha = this.life / 30;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${this.life/30})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+        
+        // 根据手柄输入创建特效
+        const createParticleEffect = (x, y, intensity = 1.0, color = null) => {
+            const canvas = document.getElementById('spectrumCanvas');
+            if (!canvas) return;
+            
+            const count = Math.floor(15 + 10 * intensity);
+            const baseColor = color || `hsl(${currentHue}, 100%, 70%)`;
+            
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 3 * intensity;
+                const velocityX = Math.cos(angle) * speed;
+                const velocityY = Math.sin(angle) * speed;
+                const size = 2 + Math.random() * 4 * intensity;
+                const life = 30 + Math.floor(Math.random() * 30);
+                
+                particles.push(new Particle(x, y, velocityX, velocityY, size, baseColor, life));
+            }
+        };
+        
+        const createRippleEffect = (x, y, color = null) => {
+            const baseColor = color || `hsl(${currentHue}, 100%, 70%)`;
+            ripples.push(new Ripple(x, y, baseColor));
+        };
+        
+        const createShockwaveEffect = (x, y) => {
+            shockwaves.push(new Shockwave(x, y));
+        };
+        
+        // 根据摇杆位置创建定向粒子流
+        const createStickParticleStream = () => {
+            const canvas = document.getElementById('spectrumCanvas');
+            if (!canvas) return;
+            
+            // 左摇杆控制粒子发射角度
+            if (Math.abs(leftStickX) > 0.1 || Math.abs(leftStickY) > 0.1) {
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                
+                // 根据左摇杆方向偏移发射位置
+                const offsetX = leftStickX * 50;
+                const offsetY = leftStickY * 50;
+                
+                // 根据右扳机强度控制粒子数量
+                const intensity = 0.5 + rightTrigger * 0.5;
+                const count = Math.floor(3 + 5 * intensity);
+                
+                for (let i = 0; i < count; i++) {
+                    // 添加一些随机性
+                    const angle = Math.atan2(leftStickY, leftStickX) + (Math.random() - 0.5) * 0.5;
+                    const speed = 2 + Math.random() * 3 * intensity;
+                    const velocityX = Math.cos(angle) * speed;
+                    const velocityY = Math.sin(angle) * speed;
+                    
+                    // 根据左扳机控制颜色
+                    const hue = (currentHue + leftTrigger * 180) % 360;
+                    const color = `hsl(${hue}, 100%, 70%)`;
+                    
+                    const size = 1 + Math.random() * 3 * intensity;
+                    const life = 20 + Math.floor(Math.random() * 20);
+                    
+                    particles.push(new Particle(
+                        centerX + offsetX + (Math.random() - 0.5) * 20,
+                        centerY + offsetY + (Math.random() - 0.5) * 20,
+                        velocityX, velocityY, size, color, life
+                    ));
+                }
+            }
+        };
+        
+        // 更新和绘制所有特效
+        const updateAndDrawEffects = () => {
+            const canvas = document.getElementById('spectrumCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            
+            // 更新粒子
+            for (let i = particles.length - 1; i >= 0; i--) {
+                if (!particles[i].update()) {
+                    particles.splice(i, 1);
+                } else {
+                    particles[i].draw(ctx);
+                }
+            }
+            
+            // 更新波纹
+            for (let i = ripples.length - 1; i >= 0; i--) {
+                if (!ripples[i].update()) {
+                    ripples.splice(i, 1);
+                } else {
+                    ripples[i].draw(ctx);
+                }
+            }
+            
+            // 更新冲击波
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                if (!shockwaves[i].update()) {
+                    shockwaves.splice(i, 1);
+                } else {
+                    shockwaves[i].draw(ctx);
+                }
+            }
+            
+            // 根据摇杆位置生成持续粒子流
+            createStickParticleStream();
+            
+            // 颜色循环
+            if (colorShiftActive) {
+                currentHue = (currentHue + 2) % 360;
+            }
+        };
+
+        /** === 核心状态机 === */
+        const applyThemeLogic = () => {
+            let targetColor = cfg.defaultColor; let showImg = false, showColor = false, bgUrl = '';
+            
+            // 计算颜色
+            if (cfg.colorMode) targetColor = cfg.customBgImg ? (cfg.customBgColor || targetColor) : (currentAlbumColor || targetColor);
+            document.documentElement.style.setProperty('--primary', targetColor);
+            
+            // 实时应用模糊度
+            document.documentElement.style.setProperty('--bg-blur', `${cfg.blurAmt}px`);
+            el.bgImg.style.filter = `blur(var(--bg-blur)) brightness(0.6) saturate(1.2)`;
+
+            // 背景呈现逻辑：自定义图片始终拥有最高渲染权
+            if (cfg.customBgImg) {
+                showImg = true; bgUrl = cfg.customBgImg;
+            } else if (hasCurrentAlbumArt && !cfg.colorMode) {
+                showImg = true; bgUrl = el.artImg.src;
+            } else {
+                showColor = true;
+            }
+            
+            if (showImg) {
+                el.bgImg.style.backgroundImage = `url(${bgUrl})`;
+                el.bgImg.classList.add('active'); el.bgColor.classList.remove('active');
+            } else if (showColor) {
+                el.bgColor.style.background = `linear-gradient(135deg, ${targetColor} 0%, var(--bg-dark) 100%)`;
+                el.bgColor.classList.add('active'); el.bgImg.classList.remove('active');
+            }
+        };
+
+        /** === 文件解析与列表更新 === */
+        const parseMetadata = (file) => {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(file);
+                const meta = { title: file.name.replace(/\.[^/.]+$/, ""), artist: "未知", url, file };
+                if (window.jsmediatags) {
+                    jsmediatags.read(file, {
+                        onSuccess: tag => {
+                            if(tag.tags.title) meta.title = decodeText(tag.tags.title);
+                            if(tag.tags.artist) meta.artist = decodeText(tag.tags.artist);
+                            if(tag.tags.picture) {
+                                let b64 = ''; const d = tag.tags.picture.data;
+                                for(let i=0; i<d.length; i++) b64 += String.fromCharCode(d[i]);
+                                meta.art = `data:${tag.tags.picture.format};base64,${window.btoa(b64)}`;
+                            } resolve(meta);
+                        }, onError: () => resolve(meta)
+                    });
+                } else resolve(meta);
+            });
+        };
+
+        /** === Chrome Media Session API === */
+        const updateMediaSession = (song) => {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: song.title, artist: song.artist,
+                    artwork: song.art ? [{ src: song.art, sizes: '512x512', type: 'image/jpeg' }] : []
+                });
+                navigator.mediaSession.setActionHandler('play', togglePlay);
+                navigator.mediaSession.setActionHandler('pause', togglePlay);
+                navigator.mediaSession.setActionHandler('previoustrack', goPrev);
+                navigator.mediaSession.setActionHandler('nexttrack', goNext);
+            }
+        };
+
+        /** === 播放控制与可视化 === */
+        const playAudio = async (idx) => {
+            if (!playlist[idx]) return;
+            if (currentIndex !== idx) { playHistory.push(idx); currentIndex = idx; }
+            
+            const song = playlist[idx]; audio.src = song.url;
+            el.title.textContent = song.title; el.artist.textContent = song.artist;
+            el.fileInfo.innerHTML = `📄 ${song.file.name} <span style="opacity:0.5; margin-left:10px;">(${(song.file.size/1048576).toFixed(2)} MB)</span>`;
+            
+            hasCurrentAlbumArt = !!song.art;
+            if (hasCurrentAlbumArt) { el.artImg.src = song.art; currentAlbumColor = await extractColor(song.art); } 
+            else { el.artImg.src = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+"; currentAlbumColor = null; }
+            
+            applyThemeLogic(); updateMediaSession(song);
+
+            try { await audio.play(); isPlaying = true; el.btnPlay.textContent = '⏸'; if(!audioCtx) initVis(); } catch(e) { showToast("❌ 播放失败"); }
+        };
+
+        const togglePlay = () => {
+            if (!playlist.length) return el.btnLoad.click();
+            if (isPlaying) { audio.pause(); isPlaying=false; el.btnPlay.textContent='▶'; }
+            else { audio.play(); isPlaying=true; el.btnPlay.textContent='⏸'; if(!audioCtx) initVis(); }
+        };
+        const goNext = () => { 
+            if(!playlist.length) return; 
+            // 触发冲击波特效
+            const canvas = document.getElementById('spectrumCanvas');
+            if (canvas) {
+                createShockwaveEffect(canvas.width * 0.8, canvas.height / 2);
+            }
+            playAudio(isShuffle ? Math.floor(Math.random()*playlist.length) : (currentIndex + 1) % playlist.length); 
+        };
+        const goPrev = () => { 
+            if(!playlist.length) return; 
+            // 触发冲击波特效
+            const canvas = document.getElementById('spectrumCanvas');
+            if (canvas) {
+                createShockwaveEffect(canvas.width * 0.2, canvas.height / 2);
+            }
+            if(isShuffle) { playHistory.pop(); playAudio(playHistory.length ? playHistory.pop() : Math.floor(Math.random()*playlist.length)); } 
+            else playAudio((currentIndex - 1 + playlist.length) % playlist.length); 
+        };
+
+        el.btnPlay.onclick = () => {
+            togglePlay();
+            // 触发波纹特效
+            const canvas = document.getElementById('spectrumCanvas');
+            if (canvas) {
+                createRippleEffect(canvas.width / 2, canvas.height / 2);
+            }
+        };
+        el.btnNext.onclick = goNext; 
+        el.btnPrev.onclick = goPrev; 
+        audio.onended = goNext;
+        audio.ontimeupdate = () => { 
+            if (audio.duration) { 
+                el.progFill.style.width = `${(audio.currentTime / audio.duration) * 100}%`; 
+                el.timeCur.textContent = formatTime(audio.currentTime); 
+            } 
+        };
+        audio.onloadedmetadata = () => el.timeTot.textContent = formatTime(audio.duration);
+        el.progArea.onclick = (e) => { 
+            if (audio.duration) { 
+                audio.currentTime = ((e.clientX - el.progArea.getBoundingClientRect().left) / el.progArea.offsetWidth) * audio.duration; 
+                // 点击进度条时触发粒子特效
+                const canvas = document.getElementById('spectrumCanvas');
+                if (canvas) {
+                    const x = (e.clientX - canvas.getBoundingClientRect().left) / canvas.clientWidth * canvas.width;
+                    const y = canvas.height / 2;
+                    createParticleEffect(x, y, 1.5);
+                }
+            } 
+        };
+        el.volSlider.oninput = (e) => { 
+            audio.volume = e.target.value; 
+            saveSettings();
+            // 音量变化时触发特效
+            const canvas = document.getElementById('spectrumCanvas');
+            if (canvas) {
+                createRippleEffect(canvas.width * 0.9, canvas.height * audio.volume, `hsl(${(1 - audio.volume) * 120}, 100%, 70%)`);
+            }
+        };
+
+        const initVis = () => {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
+                analyser = audioCtx.createAnalyser();
+                source = audioCtx.createMediaElementSource(audio); 
+                source.connect(analyser); 
+                analyser.connect(audioCtx.destination);
+                analyser.fftSize = 128; 
+                bufferLength = analyser.frequencyBinCount; 
+                dataArray = new Uint8Array(bufferLength);
+                spectrumCtx = document.getElementById('spectrumCanvas').getContext('2d'); 
+                drawVis();
+            } catch(e) { console.log("音频上下文初始化失败:", e); }
+        };
+        
+        const drawVis = () => {
+            if(!spectrumCtx) { requestAnimationFrame(drawVis); return; }
+            const cvs = document.getElementById('spectrumCanvas'); 
+            cvs.width = cvs.offsetWidth; 
+            cvs.height = cvs.offsetHeight;
+            
+            // 清空画布
+            spectrumCtx.clearRect(0, 0, cvs.width, cvs.height);
+            
+            // 绘制频谱
+            if (analyser && dataArray) {
+                analyser.getByteFrequencyData(dataArray);
+                const barWidth = (cvs.width / bufferLength) * 2.5;
+                let x = 0;
+                
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = (dataArray[i] / 255) * cvs.height;
+                    
+                    // 根据右摇杆位置调整颜色
+                    const hue = (currentHue + (rightStickX * 180)) % 360;
+                    const saturation = 70 + rightStickY * 30;
+                    const lightness = 50 + (dataArray[i] / 255) * 30;
+                    
+                    spectrumCtx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                    
+                    // 根据左扳机调整条形图形状
+                    const barY = cvs.height - barHeight;
+                    const barX = x + (Math.sin(i * 0.3 + Date.now() * 0.005) * leftTrigger * 10);
+                    
+                    // 根据右扳机调整条形图宽度
+                    const currentBarWidth = barWidth * (0.7 + rightTrigger * 0.6);
+                    
+                    spectrumCtx.fillRect(barX, barY, currentBarWidth - 1, barHeight);
+                    x += barWidth;
+                }
+            }
+            
+            // 绘制游戏化特效
+            updateAndDrawEffects();
+            
+            requestAnimationFrame(drawVis);
+        };
+
+        /** === 模态与偏好控制 === */
+        const closeAllModals = () => { el.settingsModal.classList.remove('open'); };
+        
+        el.btnLoad.onclick = () => el.folderIn.click();
+        
+        document.getElementById('btnSettings').onclick = () => { closeAllModals(); el.settingsModal.classList.add('open'); };
+        document.getElementById('btnCloseSettings').onclick = closeAllModals;
+        // 点击外部关闭模态框
+        document.querySelectorAll('.modal-overlay').forEach(m => m.onclick = (e) => { if(e.target === m) closeAllModals(); });
+
+        function updateModeUI() { el.btnSeq.classList.toggle('active', !isShuffle); el.btnRnd.classList.toggle('active', isShuffle); }
+        function updateSettingsUI() {
+            const btn = document.getElementById('btnToggleColorMode');
+            btn.textContent = cfg.colorMode ? '关闭取色模式' : '开启取色模式';
+            btn.style.color = cfg.colorMode ? 'var(--primary)' : '';
+            btn.style.borderColor = cfg.colorMode ? 'var(--primary)' : '';
+        }
+        el.btnSeq.onclick = () => { 
+            isShuffle = false; 
+            updateModeUI(); 
+            saveSettings(); 
+            showToast("模式：顺序播放");
+            // 触发颜色切换特效
+            colorShiftActive = false;
+        };
+        el.btnRnd.onclick = () => { 
+            isShuffle = true; 
+            updateModeUI(); 
+            saveSettings(); 
+            showToast("模式：随机播放");
+            // 触发颜色切换特效
+            colorShiftActive = true;
+        };
+
+        document.getElementById('btnToggleColorMode').onclick = function() {
+            cfg.colorMode = !cfg.colorMode; 
+            updateSettingsUI(); 
+            applyThemeLogic(); 
+            saveSettings(); 
+            showToast(cfg.colorMode ? "已开启取色跟随" : "已关闭取色跟随");
+        };
+        document.getElementById('blurSlider').oninput = function() { 
+            cfg.blurAmt = this.value; 
+            document.getElementById('blurVal').textContent = `${this.value}px`; 
+            applyThemeLogic(); 
+            saveSettings(); 
+        };
+
+        document.getElementById('btnSetBg').onclick = () => document.getElementById('bgInput').click();
+        document.getElementById('bgInput').onchange = (e) => {
+            const f = e.target.files[0];
+            if(f) {
+                const r = new FileReader();
+                r.onload = async (ev) => {
+                    cfg.customBgImg = ev.target.result; 
+                    cfg.customBgColor = await extractColor(cfg.customBgImg);
+                    applyThemeLogic(); 
+                    showToast("🖼️ 自定义背景应用成功");
+                }; r.readAsDataURL(f);
+            }
+        };
+        document.getElementById('btnClearBg').onclick = () => { cfg.customBgImg = null; cfg.customBgColor = null; applyThemeLogic(); showToast("🗑️ 已恢复默认"); };
+
+        /** === 文件加载处理 === */
+        el.folderIn.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files); if (!files.length) return;
+            playlist = []; const audios = [];
+            files.forEach(f => {
+                const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+                if (['.mp3','.flac','.wav','.m4a'].includes(ext)) audios.push(f);
+            });
+
+            if (!audios.length) return showToast("⚠️ 未发现音频文件");
+            el.loadWrap.classList.add('show'); const initLen = Math.min(20, audios.length);
+            
+            for(let i=0; i<initLen; i++) { playlist.push(await parseMetadata(audios[i])); el.loadBar.style.width = `${((i+1)/audios.length)*100}%`; }
+            showToast(`🚀 首批 ${initLen} 首就绪，随机开播`);
+            isShuffle = true; updateModeUI(); await playAudio(Math.floor(Math.random() * playlist.length));
+
+            if (audios.length > initLen) {
+                let curr = initLen;
+                const parseChunk = async () => {
+                    const end = Math.min(curr + 10, audios.length);
+                    for(let i = curr; i < end; i++) playlist.push(await parseMetadata(audios[i]));
+                    curr = end; el.loadBar.style.width = `${(curr/audios.length)*100}%`;
+                    if (curr < audios.length) requestAnimationFrame(parseChunk);
+                    else { setTimeout(()=> el.loadWrap.classList.remove('show'), 1000); showToast(`✅ 全库 ${audios.length} 首加载完毕`); }
+                }; requestAnimationFrame(parseChunk);
+            } else setTimeout(()=> el.loadWrap.classList.remove('show'), 500);
+        });
+
+        /** === 增强的手柄支持 === */
+        window.addEventListener("gamepadconnected", (e) => { 
+            gamepadConnected = true; 
+            el.padStatus.innerHTML = `🎮 Xbox手柄已连接 (${e.gamepad.id})`; 
+            el.padStatus.style.color = '#9ac8e2';
+            el.gamepadPanel.style.display = 'grid';
+            showToast("🎮 Xbox手柄已连接！开始游戏化体验");
+        });
+        window.addEventListener("gamepaddisconnected", () => { 
+            gamepadConnected = false; 
+            el.padStatus.innerHTML = `⌨️ 等待手柄接入...`; 
+            el.padStatus.style.color = 'var(--text-sub)';
+            el.gamepadPanel.style.display = 'none';
+        });
+        
+        const pollGamepad = () => {
+            if (!gamepadConnected) { requestAnimationFrame(pollGamepad); return; }
+            const pads = navigator.getGamepads();
+            if (!pads || !pads[0]) { requestAnimationFrame(pollGamepad); return; }
+            
+            const pad = pads[0];
+            
+            // 获取摇杆和扳机值
+            leftStickX = pad.axes[0];
+            leftStickY = pad.axes[1];
+            rightStickX = pad.axes[2];
+            rightStickY = pad.axes[3];
+            leftTrigger = pad.buttons[6].value;  // LT
+            rightTrigger = pad.buttons[7].value; // RT
+            
+            // 更新UI显示
+            el.stickLX.textContent = leftStickX.toFixed(2);
+            el.stickLY.textContent = leftStickY.toFixed(2);
+            el.triggerLT.textContent = leftTrigger.toFixed(2);
+            el.triggerRT.textContent = rightTrigger.toFixed(2);
+            
+            el.stickLXBar.style.width = `${(leftStickX + 1) * 50}%`;
+            el.stickLYBar.style.width = `${(leftStickY + 1) * 50}%`;
+            el.triggerLTBar.style.width = `${leftTrigger * 100}%`;
+            el.triggerRTBar.style.width = `${rightTrigger * 100}%`;
+            
+            // 获取当前按钮状态
+            const btns = pad.buttons.map(b => b.pressed);
+            const canvas = document.getElementById('spectrumCanvas');
+            const now = Date.now();
+            
+            // 基础功能按钮
+            if (btns[0] && !prevPadBtns[0]) { // A按钮
+                togglePlay();
+                // 触发粒子爆炸
+                if (canvas) {
+                    createParticleEffect(canvas.width/2, canvas.height/2, 1.5);
+                }
+            }
+            if (btns[1] && !prevPadBtns[1]) closeAllModals(); // B按钮
+            if (btns[9] && !prevPadBtns[9]) { // Menu按钮
+                closeAllModals(); 
+                el.settingsModal.classList.add('open');
+            }
+            if (btns[4] && !prevPadBtns[4]) { // LB按钮
+                goPrev();
+                if (canvas) {
+                    createShockwaveEffect(canvas.width * 0.2, canvas.height / 2);
+                }
+            }
+            if (btns[5] && !prevPadBtns[5]) { // RB按钮
+                goNext();
+                if (canvas) {
+                    createShockwaveEffect(canvas.width * 0.8, canvas.height / 2);
+                }
+            }
+            if (btns[2] && !prevPadBtns[2]) { // X按钮
+                el.btnSeq.click();
+                if (canvas && now - lastButtonPressTime > 200) {
+                    createRippleEffect(canvas.width * 0.3, canvas.height * 0.3, '#9ac8e2');
+                    lastButtonPressTime = now;
+                }
+            }
+            if (btns[3] && !prevPadBtns[3]) { // Y按钮
+                el.btnRnd.click();
+                if (canvas && now - lastButtonPressTime > 200) {
+                    createRippleEffect(canvas.width * 0.7, canvas.height * 0.3, '#e29a9a');
+                    lastButtonPressTime = now;
+                }
+            }
+            
+            // 十字键控制音量
+            if (btns[12]) { // 上
+                audio.volume = Math.min(1, audio.volume + 0.02);
+                el.volSlider.value = audio.volume;
+                saveSettings();
+            }
+            if (btns[13]) { // 下
+                audio.volume = Math.max(0, audio.volume - 0.02);
+                el.volSlider.value = audio.volume;
+                saveSettings();
+            }
+            
+            // 左摇杆按钮 (L3) 和右摇杆按钮 (R3)
+            if (btns[10] && !prevPadBtns[10]) { // L3
+                if (canvas) {
+                    createParticleEffect(
+                        canvas.width/2 + leftStickX * 100, 
+                        canvas.height/2 + leftStickY * 100, 
+                        1.0, 
+                        `hsl(${Math.random() * 360}, 100%, 70%)`
+                    );
+                }
+            }
+            if (btns[11] && !prevPadBtns[11]) { // R3
+                if (canvas) {
+                    createShockwaveEffect(
+                        canvas.width/2 + rightStickX * 100,
+                        canvas.height/2 + rightStickY * 100
+                    );
+                }
+            }
+            
+            // 其他任意按钮触发特效
+            for (let i = 0; i < btns.length; i++) {
+                if (btns[i] && !prevPadBtns[i] && i >= 12) { // 除了基础功能按钮外的其他按钮
+                    if (canvas && now - lastButtonPressTime > 100) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        createParticleEffect(x, y, 0.8 + Math.random() * 0.7);
+                        lastButtonPressTime = now;
+                    }
+                }
+            }
+            
+            // 根据扳机键强度调整粒子生成频率
+            if (rightTrigger > 0.1 && now - lastButtonPressTime > 300 - rightTrigger * 250) {
+                if (canvas) {
+                    const x = canvas.width/2 + (Math.random() - 0.5) * 100;
+                    const y = canvas.height/2 + (Math.random() - 0.5) * 100;
+                    createParticleEffect(x, y, rightTrigger * 1.5);
+                    lastButtonPressTime = now;
+                }
+            }
+            
+            prevPadBtns = btns;
+            requestAnimationFrame(pollGamepad);
+        };
+        
+        // 启动轮询
+        requestAnimationFrame(pollGamepad);
+
+        // 启动加载
+        loadSettings();
+    </script>
+</body>
+</html>

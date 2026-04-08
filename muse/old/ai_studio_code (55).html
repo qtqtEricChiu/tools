@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka Player - Ultimate & Immersive</title>
+    <!-- 字体与元数据解析器 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        /* ================= 核心变量与重置 ================= */
+        :root {
+            --primary: #9ac8e2;
+            --primary-light: #b4d6ea;
+            --primary-glow: rgba(154, 200, 226, 0.5);
+            --bg-dark: #0a0a1a;
+            --bg-dark-light: #1a1a2e;
+            --text-main: #f0f8ff;
+            --text-sub: #8a8aa0;
+            --glass-bg: rgba(26, 26, 46, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+            --bg-blur: 40px;
+            --curve-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --curve-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Segoe UI Emoji', sans-serif;
+            color: var(--text-main);
+            width: 100vw; height: 100vh; overflow: hidden;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-light) 50%, var(--bg-dark) 100%);
+            -webkit-font-smoothing: antialiased; position: relative;
+            user-select: none; -webkit-user-select: none;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        /* ================= 动态背景与通用层 ================= */
+        #bg-layer-img, #bg-layer-color {
+            position: fixed; top: -5%; left: -5%; right: -5%; bottom: -5%;
+            z-index: -2; opacity: 0; pointer-events: none;
+            transition: opacity 1.2s var(--curve-smooth), filter 0.5s ease;
+        }
+        #bg-layer-img {
+            background-size: cover; background-position: center;
+            filter: blur(var(--bg-blur)) brightness(0.5) saturate(1.2);
+            transform: scale(1.05);
+        }
+        #bg-layer-color {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--bg-dark) 100%);
+            transition: background 1.2s var(--curve-smooth);
+        }
+        #bg-layer-img.active, #bg-layer-color.active { opacity: 1; }
+
+        #visualCanvas {
+            position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1;
+            opacity: 0; pointer-events: none; transition: opacity 0.8s var(--curve-smooth);
+        }
+
+        /* 视图切换框架 */
+        .view-container {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            transition: all 0.6s var(--curve-spring);
+        }
+        #mainView { z-index: 10; }
+        #mainView.hidden { opacity: 0; visibility: hidden; pointer-events: none; transform: scale(0.96) translateY(20px); filter: blur(8px); }
+
+        #immView { z-index: 20; background: transparent; pointer-events: none;}
+        #immView * { pointer-events: auto; }
+        #immView.hidden { opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(30px); }
+
+        /* ================= 1. 主播放器样式 (Main View) ================= */
+        @keyframes appFadeIn { from { opacity: 0; transform: translateY(25px) scale(0.96); filter: blur(12px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
+        @keyframes floatArt { 0%, 100% { transform: translateY(0) rotate(0deg); } 25% { transform: translateY(-8px) rotate(1deg); box-shadow: 0 30px 50px rgba(0,0,0,0.4); } 75% { transform: translateY(6px) rotate(-1deg); box-shadow: 0 15px 30px rgba(0,0,0,0.3); } }
+        @keyframes shimmerBar { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+        @keyframes glowPulse { 0%, 100% { box-shadow: 0 0 15px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 35px var(--primary), 0 0 15px rgba(0,0,0,0.4); } }
+
+        .player-wrapper {
+            width: 96vw; max-width: 1400px; height: 92vh;
+            background: var(--glass-bg); backdrop-filter: blur(35px) saturate(180%); -webkit-backdrop-filter: blur(35px) saturate(180%);
+            border-radius: 32px; border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+            display: flex; flex-direction: column; overflow: hidden; animation: appFadeIn 1s var(--curve-spring) both;
+        }
+
+        .header { padding: 24px 36px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(10, 10, 26, 0.2); flex-shrink: 0; }
+        .brand { font-size: 24px; font-weight: 800; display: flex; gap: 10px; align-items: center; }
+        .brand i { color: var(--primary); transition: color 0.5s; }
+        .nav-actions { display: flex; gap: 14px; }
+        .btn-glass { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 10px 20px; border-radius: 14px; cursor: pointer; font-weight: 500; font-size: 14px; transition: all 0.3s var(--curve-smooth); display: flex; align-items: center; gap: 8px; }
+        .btn-glass:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); border-color: var(--primary); }
+        .btn-glass.active { background: var(--primary); color: #000; border-color: var(--primary); }
+
+        .load-strip-container { height: 4px; background: rgba(255,255,255,0.05); width: 100%; display: none; position: relative; overflow: hidden; flex-shrink: 0;}
+        .load-strip-container.show { display: block; }
+        .load-strip { height: 100%; width: 0%; background: var(--primary); position: relative; transition: width 0.2s; }
+        .load-strip::after { content: ''; position: absolute; inset:0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmerBar 1.5s infinite; }
+
+        .content-grid { display: flex; flex: 1; padding: 32px 40px; gap: 40px; overflow: hidden; justify-content: center; }
+        .col { display: flex; flex-direction: column; transition: all 0.5s var(--curve-spring); }
+        .col-album { flex: 0 1 380px; align-items: center; justify-content: center; gap: 30px; }
+        .col-controls { flex: 0 1 480px; justify-content: center; gap: 32px; }
+        .col-lyrics { flex: 0 1 450px; background: rgba(0,0,0,0.15); border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); position: relative; mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%); }
+
+        .art-box { width: 340px; height: 340px; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); animation: floatArt 8s ease-in-out infinite; flex-shrink: 0; }
+        .art-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.8s var(--curve-smooth); }
+        .art-box:hover .art-img { transform: scale(1.06); }
+        .track-info { text-align: center; width: 100%; }
+        .track-title { font-size: 32px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; text-shadow: 0 4px 12px rgba(0,0,0,0.3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+        .track-artist { font-size: 18px; color: var(--text-sub); font-weight: 500; }
+
+        .vis-canvas { width: 100%; height: 70px; background: rgba(0,0,0,0.2); border-radius: 16px; margin-bottom: -10px; cursor: pointer; transition: 0.3s;}
+        .vis-canvas:hover { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 0 15px var(--primary-glow);}
+        .progress-area { width: 100%; cursor: pointer; padding: 10px 0; }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; position: relative; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; position: relative; transition: background 0.5s; box-shadow: 0 0 10px var(--primary-glow);}
+        .prog-fill::after { content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%) scale(0); width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s var(--curve-spring); box-shadow: 0 0 10px var(--primary); }
+        .progress-area:hover .prog-fill::after { transform: translateY(-50%) scale(1); }
+        .time-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sub); margin-top: 8px; font-weight: 500; }
+
+        .btn-group-main { display: flex; justify-content: center; align-items: center; gap: 24px; }
+        .btn-ctrl { width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #fff; font-size: 20px; cursor: pointer; transition: all 0.3s var(--curve-spring); display: flex; justify-content: center; align-items: center; }
+        .btn-ctrl:hover { background: rgba(255,255,255,0.12); transform: scale(1.08); border-color: var(--primary); color: var(--primary); }
+        .btn-play { width: 84px; height: 84px; font-size: 32px; border: none; background: var(--primary); color: #000; animation: glowPulse 3s infinite; }
+        .btn-play:hover { transform: scale(1.08); filter: brightness(1.1); color: #000; }
+
+        .btn-group-sub { display: flex; justify-content: space-between; align-items: center; }
+        .btn-mode { width: 46px; height: 46px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #fff; cursor: pointer; transition: 0.3s; }
+        .btn-mode.active { background: var(--primary); color: #000; border-color: var(--primary); }
+        .vol-control { display: flex; align-items: center; gap: 12px; flex: 1; margin-left: 24px; background: rgba(0,0,0,0.2); padding: 12px 18px; border-radius: 16px; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; outline: none; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: var(--primary); margin-top: -5px; cursor: pointer; transition: background 0.5s; box-shadow: 0 2px 5px rgba(0,0,0,0.5);}
+
+        .lrc-viewport { flex: 1; overflow-y: auto; text-align: center; padding: 50% 20px; scroll-behavior: smooth; }
+        .lrc-line { font-size: 18px; line-height: 2.2; color: rgba(255,255,255,0.35); transition: all 0.4s var(--curve-spring); min-height: 40px; cursor: pointer; }
+        .lrc-line:hover { color: rgba(255,255,255,0.8); }
+        .lrc-line.active { color: #fff; font-size: 26px; font-weight: 700; text-shadow: 0 0 20px rgba(154,200,226,0.6); transform: scale(1.05); }
+
+        .footer { padding: 16px 36px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: var(--text-sub); display: flex; justify-content: space-between; flex-shrink: 0; }
+
+        /* ================= 2. 沉浸模式样式 (Immersive View) ================= */
+        .imm-container { display: flex; flex-direction: column; justify-content: space-between; padding: clamp(20px, 3vw, 40px); }
+        
+        /* 进出场动画 */
+        @keyframes immSlideDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes immSlideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes immFadeInUp { from { opacity: 0; transform: translate(-50%, -40%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+        
+        #immView.active .imm-topbar { animation: immSlideDown 0.8s var(--curve-spring) 0.2s both; }
+        #immView.active .imm-lyrics-center { animation: immFadeInUp 0.8s var(--curve-spring) 0.4s both; }
+        #immView.active .imm-controls { animation: immSlideUp 0.8s var(--curve-spring) 0.6s both; }
+
+        .imm-topbar { display: flex; justify-content: space-between; align-items: flex-start; }
+        .imm-track-card {
+            display: flex; align-items: center; gap: clamp(12px, 2vw, 20px);
+            background: var(--glass-bg); backdrop-filter: blur(25px) saturate(180%); -webkit-backdrop-filter: blur(25px) saturate(180%);
+            padding: clamp(12px, 2vw, 18px) clamp(16px, 3vw, 24px); border-radius: 24px; border: var(--glass-border);
+            max-width: 500px; transition: transform 0.4s var(--curve-smooth), opacity 0.4s;
+        }
+        .imm-track-card.no-cover { gap: 0; }
+        .imm-track-card.no-cover .imm-album-art { display: none; }
+        .imm-album-art { width: clamp(60px, 8vw, 80px); height: clamp(60px, 8vw, 80px); border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+        .imm-album-art img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--curve-smooth); }
+        .imm-track-card:hover .imm-album-art img { transform: scale(1.1); }
+        .imm-track-info { min-width: 0; }
+        .imm-track-title { font-size: clamp(18px, 2.2vw, 22px); font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 10px rgba(0,0,0,0.5);}
+        .imm-track-artist { font-size: clamp(14px, 1.6vw, 16px); color: var(--primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.5s; }
+
+        .imm-header-actions { display: flex; gap: 12px; }
+        .imm-icon-btn { width: 50px; height: 50px; border-radius: 16px; background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-main); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s var(--curve-smooth); font-size: 18px; }
+        .imm-icon-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); border-color: var(--primary); color: var(--primary); }
+        .imm-icon-btn.active { background: var(--primary); color: #000; border-color: var(--primary); }
+
+        .imm-lyrics-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 1000px; text-align: center; z-index: 5; }
+        .imm-subtitle { text-shadow: 0 4px 20px rgba(0,0,0,0.8), 0 0 30px var(--primary-glow); line-height: 1.4; }
+        .imm-subtitle-line { font-size: clamp(24px, 4vw, 42px); font-weight: 800; margin-bottom: 12px; min-height: 1.4em; transition: all 0.4s var(--curve-spring); opacity: 1; }
+        .imm-subtitle-line.imm-next { font-size: clamp(18px, 2.5vw, 26px); font-weight: 600; color: rgba(255,255,255,0.5); margin-top: 8px; min-height: 1.4em; }
+
+        .imm-controls { background: var(--glass-bg); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%); border-radius: 28px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5); padding: clamp(16px, 3vw, 24px) clamp(20px, 4vw, 40px); max-width: 850px; margin: 0 auto; width: 100%; }
+        .imm-progress-container { width: 100%; margin-bottom: 24px; cursor: pointer; padding: 10px 0;}
+        .imm-progress-bar { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; position: relative; }
+        .imm-progress-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; position: relative; transition: background 0.5s; box-shadow: 0 0 10px var(--primary-glow); }
+        .imm-progress-fill::after { content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%) scale(0); width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s var(--curve-spring); box-shadow: 0 0 10px var(--primary); }
+        .imm-progress-container:hover .imm-progress-fill::after { transform: translateY(-50%) scale(1.2); }
+        .imm-time-display { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; color: var(--text-sub); font-variant-numeric: tabular-nums; font-weight: 500;}
+
+        .imm-controls-row { display: flex; justify-content: space-between; align-items: center; }
+        .imm-playback-controls { display: flex; align-items: center; gap: 16px; }
+        .imm-ctrl-btn { width: 54px; height: 54px; border-radius: 50%; background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s var(--curve-spring); font-size: 20px; }
+        .imm-ctrl-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.1); border-color: var(--primary); color: var(--primary); }
+        .imm-play-btn { width: 76px; height: 76px; background: var(--primary); color: #000; font-size: 28px; border: none; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        .imm-play-btn:hover { filter: brightness(1.1); transform: scale(1.05); }
+        .imm-play-icon { transition: transform 0.4s var(--curve-spring), opacity 0.3s; }
+        .imm-pause-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0) rotate(-180deg); transition: transform 0.4s var(--curve-spring), opacity 0.3s; opacity: 0; }
+        .imm-play-btn.playing .imm-play-icon { transform: scale(0) rotate(180deg); opacity: 0; }
+        .imm-play-btn.playing .imm-pause-icon { transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; }
+
+        .imm-volume-control { display: flex; align-items: center; gap: 12px; width: 150px; background: rgba(0,0,0,0.2); padding: 10px 16px; border-radius: 16px;}
+        .imm-mode-indicator { font-size: 13px; color: var(--text-sub); padding: 8px 14px; background: rgba(255,255,255,0.05); border-radius: 12px; display: flex; align-items: center; gap: 8px; font-weight: 500;}
+
+        .imm-fullscreen-btn { position: fixed; bottom: 24px; left: 24px; width: 48px; height: 48px; border-radius: 14px; background: rgba(20,20,35,0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s var(--curve-spring); font-size: 18px; z-index: 30; }
+        .imm-fullscreen-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-3px); border-color: var(--primary); color: var(--primary); }
+        .imm-fullscreen-btn.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        .imm-gamepad-hint { position: fixed; bottom: 24px; right: 24px; font-size: 13px; color: var(--text-sub); font-weight: 500; background: rgba(20,20,35,0.6); backdrop-filter: blur(20px); padding: 10px 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 8px; opacity: 0; visibility: hidden; transition: opacity 0.3s; z-index: 30; }
+        .imm-gamepad-hint.connected { color: var(--primary); opacity: 1; visibility: visible;}
+        .imm-gamepad-hint.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        /* ================= 3. 通用模态框 & 弹窗 ================= */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 0.4s var(--curve-smooth); z-index: 100; }
+        .modal-overlay.open { opacity: 1; pointer-events: auto; }
+        .modal-content { background: rgba(20,25,40,0.85); border: 1px solid rgba(255,255,255,0.1); border-radius: 28px; padding: 32px; width: 450px; max-width: 90vw; max-height: 85vh; transform: scale(0.9); transition: transform 0.4s var(--curve-spring); display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.5); overflow-y: auto; }
+        .modal-overlay.open .modal-content { transform: scale(1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
+        .playlist-items { flex: 1; overflow-y: auto; padding-right: 10px; display: flex; flex-direction: column; gap: 8px;}
+        .pl-item { padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: 12px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
+        .pl-item:hover { background: rgba(255,255,255,0.08); }
+        .pl-item.active { background: rgba(154,200,226,0.15); border-color: var(--primary); color: var(--primary); font-weight: bold; }
+        .pl-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        .drawer-box { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px;}
+        .drawer-title { font-size: 15px; color: var(--text-sub); margin-bottom: 14px; font-weight: 600; }
+        .hotkey-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px; font-size: 13px; color: var(--text-sub); line-height: 1.6; }
+        .hotkey-grid kbd { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff; font-family: monospace;}
+
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translate(-50%, 50px); background: rgba(20,25,40,0.95); color: #fff; border: 1px solid rgba(255,255,255,0.1); padding: 14px 28px; border-radius: 30px; font-weight: 500; font-size: 15px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); opacity: 0; transition: all 0.4s var(--curve-spring); z-index: 1000; text-align: center; white-space: nowrap;}
+        .toast.show { transform: translate(-50%, 0); opacity: 1; }
+        input[type="file"] { display: none; }
+        
+        /* 响应式调整 */
+        @media (max-width: 1024px) {
+            .content-grid { flex-direction: column; overflow-y: auto; padding: 20px; align-items: center; }
+            .col-album, .col-controls { flex: 0 0 auto; width: 100%; max-width: 480px;}
+            .col-lyrics { flex: 0 0 auto; width: 100%; max-width: 480px; min-height: 400px; mask-image: none; -webkit-mask-image: none;}
+            .player-wrapper { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+            .imm-volume-control { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 动态背景层与沉浸画布 -->
+    <div id="bg-layer-img"></div>
+    <div id="bg-layer-color"></div>
+    <canvas id="visualCanvas"></canvas>
+
+    <!-- 主播放器界面 (Main View) -->
+    <div id="mainView" class="view-container active">
+        <div class="player-wrapper">
+            <div class="header">
+                <div class="brand"><i id="logoIcon">♪</i> MBolka Player</div>
+                <div class="nav-actions">
+                    <button class="btn-glass" id="btnToggleList"><i>📃</i> 列表</button>
+                    <button class="btn-glass" id="btnToggleLrc"><i>📝</i> 歌词</button>
+                    <button class="btn-glass" id="btnSettings"><i>⚙️</i> 设置</button>
+                    <button class="btn-glass" id="btnLoadFolder" style="background: var(--primary); color: #000; border:none;"><i>📁</i> 载入音乐</button>
+                </div>
+            </div>
+
+            <div class="load-strip-container" id="loadWrap"><div class="load-strip" id="loadBar"></div></div>
+
+            <div class="content-grid">
+                <div class="col col-album">
+                    <div class="art-box">
+                        <img id="albumArt" class="art-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                    </div>
+                    <div class="track-info">
+                        <div class="track-title" id="songTitle">MBolka Player Ultimate</div>
+                        <div class="track-artist" id="songArtist">等待载入音乐...</div>
+                    </div>
+                </div>
+
+                <div class="col col-controls">
+                    <canvas class="vis-canvas" id="spectrumCanvas" title="点击进入沉浸模式"></canvas>
+                    <div>
+                        <div class="progress-area" id="progArea">
+                            <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+                        </div>
+                        <div class="time-labels">
+                            <span id="timeCur">0:00</span><span id="timeTot">0:00</span>
+                        </div>
+                    </div>
+                    <div class="btn-group-main">
+                        <button class="btn-ctrl" id="btnPrev">⏮</button>
+                        <button class="btn-ctrl btn-play" id="btnPlay">▶</button>
+                        <button class="btn-ctrl" id="btnNext">⏭</button>
+                    </div>
+                    <div class="btn-group-sub">
+                        <div class="mode-toggles"><button class="btn-mode active" id="btnModeToggle" title="顺序播放">⇄</button></div>
+                        <div class="vol-control">
+                            <span>🔊</span><input type="range" id="volSlider" min="0" max="1" step="0.01" value="0.7">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col col-lyrics" id="lrcPanel" style="display: none;">
+                    <div class="lrc-viewport" id="lrcViewport">
+                        <div class="lrc-line" style="opacity: 0.5;">载入歌曲后显示歌词</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                <div id="fileInfo">就绪</div>
+                <div id="gamepadStatus">⌨️ 等待手柄接入...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 沉浸式舱界面 (Immersive View) -->
+    <div id="immView" class="view-container imm-container hidden">
+        <div class="imm-topbar">
+            <div class="imm-track-card" id="immTrackCard">
+                <div class="imm-album-art"><img id="immAlbumArt" src=""></div>
+                <div class="imm-track-info">
+                    <div class="imm-track-title" id="immSongTitle">沉浸式音乐舱</div>
+                    <div class="imm-track-artist" id="immSongArtist">就绪</div>
+                </div>
+            </div>
+            <div class="imm-header-actions">
+                <button class="imm-icon-btn" id="immBtnLoadFolder" title="载入音乐">📁</button>
+                <button class="imm-icon-btn" id="immBtnColorMode" title="UI取色跟随 (Y)">🎨</button>
+                <button class="imm-icon-btn active" id="immBtnShuffle" title="播放模式 (X)">🔀</button>
+                <button class="imm-icon-btn" id="btnExitImm" title="返回主界面 (Menu)">✖</button>
+            </div>
+        </div>
+
+        <div class="imm-lyrics-center" id="immLyricsCenter">
+            <div class="imm-subtitle">
+                <div class="imm-subtitle-line" id="immCurrLine">请载入本地音乐文件夹以开始</div>
+                <div class="imm-subtitle-line imm-next" id="immNextLine"></div>
+            </div>
+        </div>
+
+        <div class="imm-controls">
+            <div class="imm-progress-container" id="immProgArea">
+                <div class="imm-progress-bar"><div class="imm-progress-fill" id="immProgFill"></div></div>
+                <div class="imm-time-display"><span id="immTimeCur">0:00</span><span id="immTimeTot">0:00</span></div>
+            </div>
+            
+            <div class="imm-controls-row">
+                <div class="imm-playback-controls">
+                    <button class="imm-ctrl-btn" id="immBtnPrev" title="上一曲">⏮</button>
+                    <button class="imm-ctrl-btn imm-play-btn" id="immBtnPlay" title="播放/暂停"><span class="imm-play-icon">▶</span><span class="imm-pause-icon">⏸</span></button>
+                    <button class="imm-ctrl-btn" id="immBtnNext" title="下一曲">⏭</button>
+                </div>
+                <div class="imm-volume-control">
+                    <span>🔊</span><input type="range" class="imm-volume-slider" id="immVolSlider" min="0" max="1" step="0.01" value="0.7">
+                </div>
+                <div class="imm-mode-indicator" id="immModeInd"><span>🔀</span> <span id="immModeText">随机播放</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 沉浸模式外部悬浮组件 -->
+    <button class="imm-fullscreen-btn hidden" id="btnFullscreen" title="全屏 (F或View键)">⛶</button>
+    <div class="imm-gamepad-hint hidden" id="immPadHint"><span>🎮</span> <span>手柄已就绪</span></div>
+
+    <!-- 系统级弹窗 -->
+    <div class="modal-overlay" id="playlistModal">
+        <div class="modal-content" style="height: 60vh;">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;">播放列表</h2>
+                <button class="btn-glass" id="btnCloseList" style="padding: 6px 12px;">关闭</button>
+            </div>
+            <div class="playlist-items" id="playlistContainer"><div style="color:var(--text-sub); text-align:center; padding:20px;">空空如也</div></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;">系统设置</h2>
+                <button class="btn-glass" id="btnCloseSettings" style="padding: 6px 12px;">关闭</button>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">UI 视觉引擎</div>
+                <button class="btn-glass" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">开启取色模式</button>
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px;">背景模糊强度: <span id="blurVal">40px</span></div>
+                <input type="range" id="blurSlider" min="0" max="100" value="40">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">自定义背景 (优先)</div>
+                <button class="btn-glass" id="btnSetBg" style="width: 100%; justify-content: center; margin-bottom: 10px;">上传本地图片</button>
+                <button class="btn-glass" id="btnClearBg" style="width: 100%; justify-content: center; color: #ff6b6b; border-color: rgba(255,107,107,0.3);">恢复默认逻辑</button>
+                <input type="file" id="bgInput" accept="image/*">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">操作指南</div>
+                <div class="hotkey-grid">
+                    <span><kbd>Space</kbd></span> <span>播放/暂停</span>
+                    <span><kbd>←</kbd> / <kbd>→</kbd></span> <span>切歌</span>
+                    <span><kbd>↑</kbd> / <kbd>↓</kbd></span> <span>上下控制音量</span>
+                    <span><kbd>S</kbd> / <kbd>X</kbd></span> <span>顺序/随机 切换</span>
+                    <span><kbd>Y</kbd></span> <span>动态取色 切换</span>
+                    <span><kbd>L</kbd></span> <span>显隐侧边歌词 (主视图)</span>
+                    <span><kbd>F</kbd></span> <span>全屏模式</span>
+                </div>
+                <div style="margin-top: 10px; font-size: 12px; color: var(--primary);">🎮 手柄: A=播放, B=关闭/退出沉浸, Menu=设置, View=全屏, LB/RB=切歌, X=模式, Y=取色, 十字键左右=音量</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toastMsg"></div>
+    <input type="file" id="folderInput" webkitdirectory directory multiple>
+
+    <script>
+        /** === 核心元素挂载 === */
+        const el = {
+            mainView: document.getElementById('mainView'), immView: document.getElementById('immView'),
+            folderIn: document.getElementById('folderInput'),
+            btnLoad: document.getElementById('btnLoadFolder'), immBtnLoad: document.getElementById('immBtnLoadFolder'),
+            
+            // Audio Core UI - MAIN
+            btnPlay: document.getElementById('btnPlay'), btnPrev: document.getElementById('btnPrev'), btnNext: document.getElementById('btnNext'),
+            progArea: document.getElementById('progArea'), progFill: document.getElementById('progFill'),
+            timeCur: document.getElementById('timeCur'), timeTot: document.getElementById('timeTot'), volSlider: document.getElementById('volSlider'),
+            
+            // Audio Core UI - IMMERSIVE
+            immBtnPlay: document.getElementById('immBtnPlay'), immBtnPrev: document.getElementById('immBtnPrev'), immBtnNext: document.getElementById('immBtnNext'),
+            immProgArea: document.getElementById('immProgArea'), immProgFill: document.getElementById('immProgFill'),
+            immTimeCur: document.getElementById('immTimeCur'), immTimeTot: document.getElementById('immTimeTot'), immVolSlider: document.getElementById('immVolSlider'),
+
+            // Track Info
+            title: document.getElementById('songTitle'), artist: document.getElementById('songArtist'), artImg: document.getElementById('albumArt'),
+            immTitle: document.getElementById('immSongTitle'), immArtist: document.getElementById('immSongArtist'), immArtImg: document.getElementById('immAlbumArt'), immTrackCard: document.getElementById('immTrackCard'),
+
+            // Lyrics
+            lrcView: document.getElementById('lrcViewport'), lrcPanel: document.getElementById('lrcPanel'), btnToggleLrc: document.getElementById('btnToggleLrc'),
+            immCurrLine: document.getElementById('immCurrLine'), immNextLine: document.getElementById('immNextLine'),
+            
+            // Background & Visuals
+            bgImg: document.getElementById('bg-layer-img'), bgColor: document.getElementById('bg-layer-color'),
+            spectrumCanvas: document.getElementById('spectrumCanvas'), visualCanvas: document.getElementById('visualCanvas'),
+            
+            // Modes & Modals
+            btnModeToggle: document.getElementById('btnModeToggle'), immBtnShuffle: document.getElementById('immBtnShuffle'), immModeText: document.getElementById('immModeText'), immModeInd: document.getElementById('immModeInd'),
+            immBtnColorMode: document.getElementById('immBtnColorMode'), btnExitImm: document.getElementById('btnExitImm'), btnFullImm: document.getElementById('btnFullscreen'),
+            toast: document.getElementById('toastMsg'), loadBar: document.getElementById('loadBar'), loadWrap: document.getElementById('loadWrap'),
+            padStatus: document.getElementById('gamepadStatus'), immPadHint: document.getElementById('immPadHint'), fileInfo: document.getElementById('fileInfo'),
+            settingsModal: document.getElementById('settingsModal'), playlistModal: document.getElementById('playlistModal'), plContainer: document.getElementById('playlistContainer')
+        };
+
+        const defaultImg = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+";
+        
+        /** === 核心状态机 === */
+        const audio = new Audio(); audio.crossOrigin = "anonymous";
+        let audioCtx, analyser, source, dataArray, spectrumCtx, visualCtx;
+        let playlist = [], lrcMap = new Map(), playHistory = [];
+        let currentIndex = -1, isPlaying = false, isShuffle = false, isImmersive = false;
+        let parsedLyrics = [], isUserScrollingLyrics = false, lyricsScrollTimeout = null;
+        let gamepadConnected = false, prevPadBtns = [];
+        
+        // 视觉引擎配置
+        let cfg = { colorMode: false, customBgImg: null, customBgColor: null, blurAmt: 40, defaultColor: '#9ac8e2' };
+        let currentAlbumColor = null, hasCurrentAlbumArt = false;
+        let currentHue = 210, targetHue = 210, visTime = 0, idleFrames = 0, gamepadActive = false;
+        
+        // 粒子系统
+        class Particle {
+            constructor(x, y, vx, vy, color, size) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.color = color; this.size = size; this.life = 1; }
+            update() { this.x += this.vx; this.y += this.vy; this.life -= 0.02; this.size *= 0.95; this.vx *= 0.95; this.vy *= 0.95; return this.life > 0; }
+            draw(ctx) { ctx.save(); ctx.globalAlpha = this.life; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+        }
+        class Ripple {
+            constructor(x, y, color) { this.x = x; this.y = y; this.radius = 5; this.color = color; this.life = 1; }
+            update() { this.radius += 10; this.life -= 0.04; return this.life > 0; }
+            draw(ctx) { ctx.save(); ctx.globalAlpha = this.life; ctx.strokeStyle = this.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.stroke(); ctx.restore(); }
+        }
+        let particles = [], ripples = [];
+        const MAX_PARTICLES = 50, MAX_RIPPLES = 5;
+        let emitterX = window.innerWidth / 2, emitterY = window.innerHeight / 2, targetX = emitterX, targetY = emitterY;
+
+        /** === 工具与持久化 === */
+        const showToast = (msg, icon='') => { el.toast.innerHTML = `${icon} ${msg}`; el.toast.classList.add('show'); setTimeout(() => el.toast.classList.remove('show'), 2500); };
+        const formatTime = (sec) => { if (!sec || isNaN(sec)) return '0:00'; const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s.toString().padStart(2, '0')}`; };
+        const decodeText = (str) => { if (!str) return ''; let s = str.replace(/\\u([0-9a-fA-F]{4})/g, (m, g) => String.fromCharCode(parseInt(g, 16))); const txt = document.createElement("textarea"); txt.innerHTML = s; return txt.value; };
+        
+        const saveSettings = () => { try { localStorage.setItem('MBolka_Cfg_Combo', JSON.stringify({ colorMode: cfg.colorMode, blurAmt: cfg.blurAmt, vol: audio.volume, isShuffle: isShuffle, customBgImg: cfg.customBgImg, customBgColor: cfg.customBgColor })); } catch(e) {} };
+        const loadSettings = () => {
+            try {
+                const stored = JSON.parse(localStorage.getItem('MBolka_Cfg_Combo'));
+                if (stored) {
+                    cfg.colorMode = stored.colorMode; cfg.blurAmt = stored.blurAmt; audio.volume = stored.vol ?? 0.7; isShuffle = stored.isShuffle;
+                    cfg.customBgImg = stored.customBgImg; cfg.customBgColor = stored.customBgColor;
+                } else { audio.volume = 0.7; }
+                el.volSlider.value = audio.volume; el.immVolSlider.value = audio.volume;
+                document.getElementById('blurSlider').value = cfg.blurAmt; document.getElementById('blurVal').textContent = `${cfg.blurAmt}px`;
+                updateModeUI(); updateSettingsUI(); applyThemeLogic();
+            } catch(e) {}
+        };
+
+        const extractColor = (imgSrc) => {
+            return new Promise((resolve) => {
+                if (!imgSrc || imgSrc.startsWith('data:image/svg')) return resolve(null);
+                const img = new Image();
+                img.onload = () => {
+                    const cvs = document.createElement('canvas'); cvs.width = 32; cvs.height = 32;
+                    const ctx = cvs.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, 32, 32);
+                    try {
+                        const data = ctx.getImageData(0, 0, 32, 32).data; let r=0, g=0, b=0, count=0;
+                        for(let i=0; i<data.length; i+=16) { if(data[i]>20 && data[i]<235) { r+=data[i]; g+=data[i+1]; b+=data[i+2]; count++; } }
+                        resolve(count > 0 ? `rgb(${~~(r/count)},${~~(g/count)},${~~(b/count)})` : null);
+                    } catch(e) { resolve(null); }
+                }; img.onerror = () => resolve(null); img.src = imgSrc;
+            });
+        };
+
+        const getHueFromRgb = (rgbStr) => {
+            if (!rgbStr) return 210;
+            const match = rgbStr.match(/\d+/g); if (!match) return 210;
+            let r = parseInt(match[0])/255, g = parseInt(match[1])/255, b = parseInt(match[2])/255;
+            const max = Math.max(r,g,b), min = Math.min(r,g,b); let h = 0;
+            if (max !== min) {
+                const d = max - min;
+                switch (max) { case r: h = (g-b)/d + (g<b?6:0); break; case g: h = (b-r)/d + 2; break; case b: h = (r-g)/d + 4; break; } h /= 6;
+            } return h * 360;
+        };
+
+        /** === 视图与主题控制 === */
+        function switchView(toImmersive) {
+            isImmersive = toImmersive;
+            if (toImmersive) {
+                el.mainView.classList.add('hidden');
+                el.immView.classList.remove('hidden'); el.immView.classList.add('active');
+                el.visualCanvas.style.opacity = 1; el.btnFullImm.classList.remove('hidden');
+                if(gamepadConnected) el.immPadHint.classList.add('connected');
+            } else {
+                el.immView.classList.add('hidden'); el.immView.classList.remove('active');
+                el.mainView.classList.remove('hidden');
+                el.visualCanvas.style.opacity = 0; el.btnFullImm.classList.add('hidden');
+                el.immPadHint.classList.remove('connected');
+            }
+        }
+
+        const applyThemeLogic = () => {
+            let targetColor = cfg.defaultColor; let showImg = false, showColor = false, bgUrl = '';
+            if (cfg.colorMode) targetColor = cfg.customBgImg ? (cfg.customBgColor || targetColor) : (currentAlbumColor || targetColor);
+            
+            document.documentElement.style.setProperty('--primary', targetColor);
+            targetHue = getHueFromRgb(targetColor);
+            
+            const rgbMatch = targetColor.match(/\d+/g);
+            if(rgbMatch) document.documentElement.style.setProperty('--primary-glow', `rgba(${rgbMatch[0]}, ${rgbMatch[1]}, ${rgbMatch[2]}, 0.5)`);
+            
+            document.documentElement.style.setProperty('--bg-blur', `${cfg.blurAmt}px`);
+            el.bgImg.style.filter = `blur(var(--bg-blur)) brightness(0.6) saturate(1.2)`;
+
+            if (cfg.customBgImg) { showImg = true; bgUrl = cfg.customBgImg; } 
+            else if (hasCurrentAlbumArt && !cfg.colorMode) { showImg = true; bgUrl = el.artImg.src; } 
+            else showColor = true;
+            
+            if (showImg) {
+                el.bgImg.style.backgroundImage = `url(${bgUrl})`;
+                el.bgImg.classList.add('active'); el.bgColor.classList.remove('active');
+            } else if (showColor) {
+                el.bgColor.style.background = `linear-gradient(135deg, ${targetColor} 0%, var(--bg-dark) 100%)`;
+                el.bgColor.classList.add('active'); el.bgImg.classList.remove('active');
+            }
+        };
+
+        const toggleFullscreen = () => {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(err => console.log(err)); showToast("已进入全屏", "⛶"); } 
+            else { if (document.exitFullscreen) document.exitFullscreen(); showToast("已退出全屏", "⛶"); }
+        };
+
+        /** === 歌词引擎 === */
+        const loadLrc = async (song) => {
+            parsedLyrics = []; el.lrcView.innerHTML = ''; el.immCurrLine.textContent = ''; el.immNextLine.textContent = '';
+            const base = song.file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+            let file = lrcMap.get(base);
+            if(!file) for (let [k, v] of lrcMap.entries()) if (k.includes(base) || base.includes(k)) { file = v; break; }
+
+            if (!file) {
+                el.lrcPanel.style.display = 'none'; el.btnToggleLrc.classList.remove('active');
+                el.immCurrLine.textContent = "纯音乐 / 无滚动歌词"; return;
+            }
+
+            const text = await new Promise(resolve => {
+                const r = new FileReader();
+                r.onload = e => { try { resolve(new TextDecoder('utf-8', {fatal: true}).decode(e.target.result)); } catch { const r2=new FileReader(); r2.onload=ev=>resolve(ev.target.result); r2.readAsText(file, 'gbk'); } }; r.readAsArrayBuffer(file);
+            });
+
+            text.split(/\r?\n/).forEach(line => {
+                const times = line.match(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g);
+                if (times) {
+                    const txt = decodeText(line.replace(/\[.*?\]/g, '').trim());
+                    if (txt) {
+                        times.forEach(t => {
+                            const match = t.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/);
+                            if (match) { const ms = match[3] ? parseInt(match[3].padEnd(3,'0')) : 0; parsedLyrics.push({ time: parseInt(match[1])*60 + parseInt(match[2]) + ms/1000, text: txt }); }
+                        });
+                    }
+                }
+            }); parsedLyrics.sort((a,b) => a.time - b.time);
+
+            if(parsedLyrics.length) {
+                el.lrcPanel.style.display = 'flex'; el.btnToggleLrc.classList.add('active');
+                parsedLyrics.forEach((l, i) => { const d = document.createElement('div'); d.className = 'lrc-line'; d.textContent = l.text; d.onclick = () => { audio.currentTime = l.time; syncLyrics(true); }; el.lrcView.appendChild(d); });
+                el.immCurrLine.textContent = parsedLyrics[0].text; if(parsedLyrics.length > 1) el.immNextLine.textContent = parsedLyrics[1].text;
+            } else {
+                el.lrcPanel.style.display = 'none'; el.btnToggleLrc.classList.remove('active');
+                el.immCurrLine.textContent = "无有效歌词数据";
+            }
+        };
+
+        const handleUserScroll = () => { isUserScrollingLyrics = true; clearTimeout(lyricsScrollTimeout); lyricsScrollTimeout = setTimeout(() => { isUserScrollingLyrics = false; syncLyrics(); }, 2000); };
+        el.lrcView.addEventListener('wheel', handleUserScroll, {passive: true}); el.lrcView.addEventListener('touchmove', handleUserScroll, {passive: true});
+
+        const syncLyrics = (force = false) => {
+            if(!parsedLyrics.length) return;
+            const cur = audio.currentTime; let activeIdx = -1;
+            for (let i = 0; i < parsedLyrics.length; i++) { if (cur >= parsedLyrics[i].time - 0.2) activeIdx = i; else break; }
+
+            // 同步主界面
+            if (el.lrcPanel.style.display !== 'none') {
+                const lines = el.lrcView.querySelectorAll('.lrc-line');
+                lines.forEach((line, i) => {
+                    if (i === activeIdx) {
+                        if (!line.classList.contains('active')) {
+                            line.classList.add('active');
+                            if (!isUserScrollingLyrics || force) {
+                                const offset = line.offsetTop - el.lrcView.offsetTop - (el.lrcView.clientHeight / 2) + (line.clientHeight / 2);
+                                el.lrcView.scrollTo({ top: offset, behavior: 'smooth' });
+                            }
+                        }
+                    } else line.classList.remove('active');
+                });
+            }
+
+            // 同步沉浸界面
+            if (activeIdx !== -1) {
+                const curTxt = parsedLyrics[activeIdx].text; const nextTxt = activeIdx+1 < parsedLyrics.length ? parsedLyrics[activeIdx+1].text : '';
+                if(el.immCurrLine.textContent !== curTxt) { el.immCurrLine.style.opacity=0; setTimeout(()=>{ el.immCurrLine.textContent=curTxt; el.immCurrLine.style.opacity=1; }, 200); }
+                if(el.immNextLine.textContent !== nextTxt) { el.immNextLine.style.opacity=0; setTimeout(()=>{ el.immNextLine.textContent=nextTxt; el.immNextLine.style.opacity=1; }, 200); }
+            }
+        };
+
+        /** === 文件解析与播放逻辑 === */
+        const parseMetadata = (file) => {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(file); const meta = { title: file.name.replace(/\.[^/.]+$/, ""), artist: "未知", url, file };
+                if (window.jsmediatags) {
+                    jsmediatags.read(file, {
+                        onSuccess: tag => {
+                            if(tag.tags.title) meta.title = decodeText(tag.tags.title); if(tag.tags.artist) meta.artist = decodeText(tag.tags.artist);
+                            if(tag.tags.picture) { let b64 = ''; const d = tag.tags.picture.data; for(let i=0; i<d.length; i++) b64 += String.fromCharCode(d[i]); meta.art = `data:${tag.tags.picture.format};base64,${window.btoa(b64)}`; }
+                            resolve(meta);
+                        }, onError: () => resolve(meta)
+                    });
+                } else resolve(meta);
+            });
+        };
+
+        const renderPlaylist = () => {
+            el.plContainer.innerHTML = '';
+            playlist.forEach((s, i) => {
+                const div = document.createElement('div'); div.className = `pl-item ${i === currentIndex ? 'active' : ''}`;
+                div.innerHTML = `<span class="pl-title">${s.title}</span> <span style="font-size:12px;opacity:0.6;">${s.artist}</span>`;
+                div.onclick = () => { playAudio(i); el.playlistModal.classList.remove('open'); }; el.plContainer.appendChild(div);
+            });
+            const activeItem = el.plContainer.querySelector('.active'); if(activeItem) activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        };
+
+        el.folderIn.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files); if (!files.length) return;
+            playlist = []; lrcMap.clear(); const audios = [];
+            files.forEach(f => {
+                const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+                if (['.mp3','.flac','.wav','.m4a'].includes(ext)) audios.push(f); else if (ext === '.lrc') lrcMap.set(f.name.replace('.lrc','').toLowerCase(), f);
+            });
+
+            if (!audios.length) return showToast("未发现音频文件", "⚠️");
+            el.loadWrap.classList.add('show'); const initLen = Math.min(20, audios.length);
+            
+            for(let i=0; i<initLen; i++) { playlist.push(await parseMetadata(audios[i])); el.loadBar.style.width = `${((i+1)/audios.length)*100}%`; }
+            showToast(`首批 ${initLen} 首就绪，随机开播`, "🚀");
+            isShuffle = true; updateModeUI(); renderPlaylist(); await playAudio(Math.floor(Math.random() * playlist.length));
+
+            if (audios.length > initLen) {
+                let curr = initLen;
+                const parseChunk = async () => {
+                    const end = Math.min(curr + 10, audios.length);
+                    for(let i = curr; i < end; i++) playlist.push(await parseMetadata(audios[i]));
+                    curr = end; el.loadBar.style.width = `${(curr/audios.length)*100}%`;
+                    if (curr % 50 === 0) renderPlaylist();
+                    if (curr < audios.length) requestAnimationFrame(parseChunk);
+                    else { setTimeout(()=> el.loadWrap.classList.remove('show'), 1000); renderPlaylist(); showToast(`全库 ${audios.length} 首加载完毕`, "✅"); }
+                }; requestAnimationFrame(parseChunk);
+            } else setTimeout(()=> el.loadWrap.classList.remove('show'), 500);
+        });
+
+        const playAudio = async (idx) => {
+            if (!playlist[idx]) return;
+            if (currentIndex !== idx) { playHistory.push(idx); currentIndex = idx; }
+            
+            const song = playlist[idx]; audio.src = song.url;
+            el.title.textContent = el.immTitle.textContent = song.title; 
+            el.artist.textContent = el.immArtist.textContent = song.artist;
+            document.title = `${song.title} - ${song.artist}`;
+            el.fileInfo.innerHTML = `📄 ${song.file.name} <span style="opacity:0.5; margin-left:10px;">(${(song.file.size/1048576).toFixed(2)} MB)</span>`;
+            
+            hasCurrentAlbumArt = !!song.art;
+            if (hasCurrentAlbumArt) { el.artImg.src = el.immArtImg.src = song.art; el.immTrackCard.classList.remove('no-cover'); currentAlbumColor = await extractColor(song.art); } 
+            else { el.artImg.src = el.immArtImg.src = defaultImg; el.immTrackCard.classList.add('no-cover'); currentAlbumColor = null; }
+            
+            applyThemeLogic(); await loadLrc(song); renderPlaylist();
+            
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: song.artist, artwork: song.art ? [{ src: song.art, sizes: '512x512', type: 'image/jpeg' }] : [] });
+                navigator.mediaSession.setActionHandler('play', togglePlay); navigator.mediaSession.setActionHandler('pause', togglePlay);
+                navigator.mediaSession.setActionHandler('previoustrack', goPrev); navigator.mediaSession.setActionHandler('nexttrack', goNext);
+            }
+
+            try { await audio.play(); isPlaying = true; el.btnPlay.textContent = '⏸'; el.immBtnPlay.classList.add('playing'); if(!audioCtx) initVis(); } catch(e) { showToast("播放受阻", "❌"); }
+        };
+
+        const createExplosion = (x, y, intensity) => {
+            const count = Math.floor(6 * intensity);
+            for (let i=0; i<count; i++) {
+                const ang = Math.random() * Math.PI*2, spd = 1 + Math.random()*3*intensity;
+                particles.push(new Particle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, `hsl(${currentHue},80%,70%)`, 2+Math.random()*4));
+            }
+        };
+
+        const togglePlay = () => {
+            if (!playlist.length) return el.btnLoad.click();
+            if (isPlaying) { audio.pause(); isPlaying=false; el.btnPlay.textContent='▶'; el.immBtnPlay.classList.remove('playing'); }
+            else { audio.play(); isPlaying=true; el.btnPlay.textContent='⏸'; el.immBtnPlay.classList.add('playing'); if(!audioCtx) initVis(); }
+            if(isImmersive) ripples.push(new Ripple(el.visualCanvas.width/2, el.visualCanvas.height/2, `hsl(${currentHue},80%,70%)`));
+        };
+        const goNext = () => { if(!playlist.length) return; playAudio(isShuffle ? Math.floor(Math.random()*playlist.length) : (currentIndex + 1) % playlist.length); if(isImmersive) createExplosion(window.innerWidth*0.8, window.innerHeight/2, 2); };
+        const goPrev = () => { if(!playlist.length) return; if(isShuffle) { playHistory.pop(); playAudio(playHistory.length ? playHistory.pop() : Math.floor(Math.random()*playlist.length)); } else playAudio((currentIndex - 1 + playlist.length) % playlist.length); if(isImmersive) createExplosion(window.innerWidth*0.2, window.innerHeight/2, 2); };
+
+        audio.onended = goNext;
+        audio.ontimeupdate = () => { 
+            if (audio.duration) { 
+                const pct = `${(audio.currentTime / audio.duration) * 100}%`;
+                el.progFill.style.width = el.immProgFill.style.width = pct; 
+                el.timeCur.textContent = el.immTimeCur.textContent = formatTime(audio.currentTime); 
+                syncLyrics(); 
+            }
+        };
+        audio.onloadedmetadata = () => el.timeTot.textContent = el.immTimeTot.textContent = formatTime(audio.duration);
+        
+        el.progArea.onclick = (e) => { if (audio.duration) audio.currentTime = ((e.clientX - el.progArea.getBoundingClientRect().left) / el.progArea.offsetWidth) * audio.duration; };
+        el.immProgArea.onclick = (e) => { if (audio.duration) { audio.currentTime = ((e.clientX - el.immProgArea.getBoundingClientRect().left) / el.immProgArea.offsetWidth) * audio.duration; createExplosion(e.clientX, e.clientY, 1.5); } };
+        
+        const syncVol = (e) => { audio.volume = el.volSlider.value = el.immVolSlider.value = e.target.value; saveSettings(); };
+        el.volSlider.oninput = syncVol; el.immVolSlider.oninput = syncVol;
+
+        /** === 视觉分析与渲染引擎 === */
+        const initVis = () => {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+                source = audioCtx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(audioCtx.destination);
+                dataArray = new Uint8Array(analyser.frequencyBinCount); spectrumCtx = el.spectrumCanvas.getContext('2d'); visualCtx = el.visualCanvas.getContext('2d');
+                drawVis();
+            } catch(e) {}
+        };
+        const drawVis = () => {
+            requestAnimationFrame(drawVis);
+            if(!analyser) return; analyser.getByteFrequencyData(dataArray);
+
+            if (isImmersive) {
+                const cvs = el.visualCanvas;
+                if (cvs.width !== window.innerWidth || cvs.height !== window.innerHeight) { cvs.width = window.innerWidth; cvs.height = window.innerHeight; }
+                visTime += 0.01; idleFrames++; visualCtx.clearRect(0, 0, cvs.width, cvs.height);
+                
+                if (cfg.colorMode) { let diff = targetHue - currentHue; if (diff > 180) diff -= 360; else if (diff < -180) diff += 360; currentHue += diff * 0.05; } 
+                else { currentHue = (currentHue + 0.1) % 360; } if (currentHue < 0) currentHue += 360;
+
+                if (idleFrames > 120 && !gamepadActive) { targetX = cvs.width/2 + Math.sin(visTime*0.5)*100; targetY = cvs.height/2 + Math.cos(visTime*0.7)*100; }
+                emitterX += (targetX - emitterX) * 0.1; emitterY += (targetY - emitterY) * 0.1;
+                
+                if (isPlaying) {
+                    const bass = (dataArray[2] + dataArray[3])/2; const mid = dataArray[20];
+                    const cx = cvs.width/2, cy = cvs.height/2; const radius = 120 + bass*0.6;
+                    visualCtx.save(); visualCtx.translate(cx, cy);
+                    for (let i=0; i<64; i+=2) {
+                        const angle = (i/64)*Math.PI*2; const val = dataArray[i]/255; const extR = radius + val*120;
+                        visualCtx.strokeStyle = `hsla(${(currentHue + i*2) % 360}, 80%, 65%, ${0.4 + val*0.6})`; visualCtx.lineWidth = 3;
+                        visualCtx.beginPath(); visualCtx.moveTo(Math.cos(angle)*radius, Math.sin(angle)*radius); visualCtx.lineTo(Math.cos(angle)*extR, Math.sin(angle)*extR); visualCtx.stroke();
+                    } visualCtx.restore();
+                    if (bass > 210 && Math.random() < 0.2) createExplosion(emitterX, emitterY, 1.2);
+                    if (mid > 190 && Math.random() < 0.1) ripples.push(new Ripple(emitterX, emitterY, `hsl(${currentHue},80%,70%)`));
+                }
+                
+                if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES);
+                if (ripples.length > MAX_RIPPLES) ripples.shift();
+                particles = particles.filter(p => { if(p.update()){ p.draw(visualCtx); return true; } return false; });
+                ripples = ripples.filter(r => { if(r.update()){ r.draw(visualCtx); return true; } return false; });
+            } else {
+                const cvs = el.spectrumCanvas;
+                if(cvs.width !== cvs.offsetWidth) { cvs.width = cvs.offsetWidth; cvs.height = cvs.offsetHeight; }
+                spectrumCtx.clearRect(0,0, cvs.width, cvs.height);
+                const numBars = 64; const w = (cvs.width / numBars) * 2; let x = 0;
+                for(let i=0; i<numBars; i++) {
+                    const h = (dataArray[i]/255) * cvs.height; spectrumCtx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                    spectrumCtx.fillRect(x, cvs.height - h, w-1, h); x += w;
+                }
+            }
+        };
+
+        window.addEventListener('mousemove', (e) => { if(isImmersive) { targetX = e.clientX; targetY = e.clientY; idleFrames = 0; gamepadActive = false; }});
+
+        /** === 按钮与快捷控制 === */
+        const closeAllModals = () => { el.settingsModal.classList.remove('open'); el.playlistModal.classList.remove('open'); };
+        
+        el.btnLoad.onclick = el.immBtnLoad.onclick = () => el.folderIn.click();
+        el.btnPlay.onclick = el.immBtnPlay.onclick = togglePlay;
+        el.btnNext.onclick = el.immBtnNext.onclick = goNext;
+        el.btnPrev.onclick = el.immBtnPrev.onclick = goPrev;
+        
+        el.spectrumCanvas.onclick = () => { if (!playlist.length) return showToast("⚠️ 请先载入音乐"); switchView(true); };
+        el.btnExitImm.onclick = () => switchView(false);
+        el.btnFullImm.onclick = toggleFullscreen;
+
+        el.btnToggleLrc.onclick = () => {
+            const isHidden = el.lrcPanel.style.display === 'none'; el.lrcPanel.style.display = isHidden ? 'flex' : 'none';
+            el.btnToggleLrc.classList.toggle('active', isHidden); if(isHidden) syncLyrics(true);
+        };
+
+        document.getElementById('btnToggleList').onclick = () => { closeAllModals(); el.playlistModal.classList.add('open'); renderPlaylist(); };
+        document.getElementById('btnSettings').onclick = () => { closeAllModals(); el.settingsModal.classList.add('open'); };
+        document.getElementById('btnCloseList').onclick = document.getElementById('btnCloseSettings').onclick = closeAllModals;
+        document.querySelectorAll('.modal-overlay').forEach(m => m.onclick = (e) => { if(e.target === m) closeAllModals(); });
+
+        const updateModeUI = () => { 
+            el.btnModeToggle.textContent = isShuffle ? '🔀' : '⇄'; el.btnModeToggle.title = isShuffle ? '随机播放' : '顺序播放';
+            el.immBtnShuffle.classList.toggle('active', isShuffle); el.immModeText.textContent = isShuffle ? '随机播放' : '顺序播放'; el.immModeInd.querySelector('span').textContent = isShuffle ? '🔀' : '⇄';
+        };
+        const updateSettingsUI = () => {
+            const btn = document.getElementById('btnToggleColorMode');
+            btn.textContent = cfg.colorMode ? '关闭取色模式' : '开启取色模式'; btn.style.color = btn.style.borderColor = cfg.colorMode ? 'var(--primary)' : '';
+            el.immBtnColorMode.classList.toggle('active', cfg.colorMode);
+        };
+        
+        el.btnModeToggle.onclick = el.immBtnShuffle.onclick = () => { isShuffle = !isShuffle; updateModeUI(); saveSettings(); showToast(isShuffle ? "模式：随机播放" : "模式：顺序播放", "🔄"); };
+        const toggleColorMode = () => { cfg.colorMode = !cfg.colorMode; updateSettingsUI(); applyThemeLogic(); saveSettings(); showToast(cfg.colorMode ? "已开启取色跟随" : "已关闭取色跟随", "🎨"); };
+        document.getElementById('btnToggleColorMode').onclick = el.immBtnColorMode.onclick = toggleColorMode;
+        
+        document.getElementById('blurSlider').oninput = function() { cfg.blurAmt = this.value; document.getElementById('blurVal').textContent = `${this.value}px`; applyThemeLogic(); saveSettings(); };
+        document.getElementById('btnSetBg').onclick = () => document.getElementById('bgInput').click();
+        document.getElementById('bgInput').onchange = (e) => { const f = e.target.files[0]; if(f) { const r = new FileReader(); r.onload = async (ev) => { cfg.customBgImg = ev.target.result; cfg.customBgColor = await extractColor(cfg.customBgImg); applyThemeLogic(); saveSettings(); showToast("自定义背景应用成功", "🖼️"); }; r.readAsDataURL(f); } };
+        document.getElementById('btnClearBg').onclick = () => { cfg.customBgImg = null; cfg.customBgColor = null; applyThemeLogic(); saveSettings(); showToast("已恢复默认逻辑", "🗑️"); };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            switch(e.key.toLowerCase()) {
+                case ' ': case 'enter': e.preventDefault(); togglePlay(); break;
+                case 'arrowleft': e.preventDefault(); goPrev(); break;
+                case 'arrowright': e.preventDefault(); goNext(); break;
+                case 'arrowup': e.preventDefault(); syncVol({target:{value: Math.min(1, audio.volume+0.1)}}); break;
+                case 'arrowdown': e.preventDefault(); syncVol({target:{value: Math.max(0, audio.volume-0.1)}}); break;
+                case 's': case 'x': el.btnModeToggle.click(); break; case 'y': toggleColorMode(); break;
+                case 'l': if(!isImmersive) el.btnToggleLrc.click(); break; case 'f': toggleFullscreen(); break;
+                case 'escape': if(document.fullscreenElement) document.exitFullscreen(); else if(isImmersive) switchView(false); else closeAllModals(); break;
+            }
+        });
+
+        window.addEventListener("gamepadconnected", () => { gamepadConnected = true; el.padStatus.innerHTML = `🎮 手柄已连接`; el.padStatus.style.color = 'var(--primary)'; if(isImmersive) el.immPadHint.classList.add('connected'); });
+        window.addEventListener("gamepaddisconnected", () => { gamepadConnected = false; el.padStatus.innerHTML = `⌨️ 等待手柄接入...`; el.padStatus.style.color = 'var(--text-sub)'; el.immPadHint.classList.remove('connected'); });
+        
+        const pollGamepad = () => {
+            if (!gamepadConnected) { requestAnimationFrame(pollGamepad); return; }
+            const pad = navigator.getGamepads()[0];
+            if (pad) {
+                if(isImmersive && (Math.abs(pad.axes[0])>0.1 || Math.abs(pad.axes[1])>0.1)) { targetX = window.innerWidth/2 + pad.axes[0]*300; targetY = window.innerHeight/2 + pad.axes[1]*300; idleFrames=0; gamepadActive=true; }
+                const btns = pad.buttons.map(b => b.pressed);
+                if (btns[0] && !prevPadBtns[0]) togglePlay(); 
+                if (btns[1] && !prevPadBtns[1]) { if(isImmersive) switchView(false); else closeAllModals(); } 
+                if (btns[2] && !prevPadBtns[2]) el.btnModeToggle.click(); 
+                if (btns[3] && !prevPadBtns[3]) toggleColorMode(); 
+                if (btns[4] && !prevPadBtns[4]) goPrev(); 
+                if (btns[5] && !prevPadBtns[5]) goNext(); 
+                if (btns[8] && !prevPadBtns[8]) toggleFullscreen(); 
+                if (btns[9] && !prevPadBtns[9]) { if(isImmersive) switchView(false); else { closeAllModals(); el.settingsModal.classList.add('open'); } } 
+                if (btns[14]) syncVol({target:{value: Math.max(0, audio.volume-0.02)}}); 
+                if (btns[15]) syncVol({target:{value: Math.min(1, audio.volume+0.02)}}); 
+                prevPadBtns = btns;
+            } requestAnimationFrame(pollGamepad);
+        }; requestAnimationFrame(pollGamepad);
+
+        /** === 初始化 === */
+        loadSettings();
+    </script>
+</body>
+</html>

@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka - Ultimate Immersive</title>
+    <!-- jsmediatags: 提取音频元数据 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        /* ================= 核心变量与重置 ================= */
+        :root {
+            --primary: #9ac8e2;
+            --primary-light: #b4d6ea;
+            --bg-dark: #0a0a1a;
+            --text-main: #f0f8ff;
+            --text-sub: #8a8aa0;
+            --glass-bg: rgba(26, 26, 46, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --bg-blur: 40px;
+            --curve-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background: var(--bg-dark);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 隐藏原生滚动条 */
+        ::-webkit-scrollbar { display: none; }
+
+        /* ================= 全局背景与全屏画布 ================= */
+        #bg-layer-img {
+            position: fixed; inset: -5%; z-index: -3; opacity: 0; pointer-events: none;
+            background-size: cover; background-position: center;
+            filter: blur(var(--bg-blur)) brightness(0.4) saturate(1.2);
+            transition: opacity 1.2s ease, filter 1s ease, background-image 1s ease;
+        }
+        #bg-layer-img.active { opacity: 1; }
+
+        /* 可视化画布始终在背景，沉浸模式下成为主角 */
+        #globalCanvas {
+            position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -2;
+            pointer-events: none; transition: opacity 1s; opacity: 0.3; /* 常规模式下微弱显示 */
+        }
+
+        /* ================= 常规模式 UI (Ultimate Player) ================= */
+        .player-wrapper {
+            width: 96vw; max-width: 1400px; height: 92vh;
+            background: var(--glass-bg); backdrop-filter: blur(35px) saturate(180%);
+            border-radius: 32px; border: 1px solid var(--glass-border);
+            display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5); z-index: 10;
+            transition: opacity 0.5s, transform 0.5s;
+        }
+
+        .header { padding: 24px 36px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; }
+        .brand { font-size: 24px; font-weight: 800; color: var(--primary); }
+        .nav-actions { display: flex; gap: 14px; }
+        .btn-glass {
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main); padding: 10px 20px; border-radius: 14px; cursor: pointer; transition: 0.3s;
+        }
+        .btn-glass:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); border-color: var(--primary); }
+
+        .content-grid { display: flex; flex: 1; padding: 32px 40px; gap: 40px; }
+        .col-album { flex: 0 1 380px; align-items: center; justify-content: center; display:flex; flex-direction: column; gap: 30px; }
+        .col-controls { flex: 0 1 480px; display:flex; flex-direction: column; justify-content: center; gap: 32px; }
+        .col-lyrics { flex: 1; background: rgba(0,0,0,0.15); border-radius: 24px; overflow: hidden; position: relative; mask-image: linear-gradient(to bottom, transparent, black 15%, black 85%, transparent); }
+
+        .art-box { width: 340px; height: 340px; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); }
+        .art-img { width: 100%; height: 100%; object-fit: cover; transition: 0.8s; }
+        
+        .track-title { font-size: 32px; font-weight: 800; text-align: center; }
+        .track-artist { font-size: 18px; color: var(--text-sub); text-align: center; }
+
+        .progress-area { width: 100%; cursor: pointer; padding: 10px 0; }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; position: relative; transition: width 0.1s linear; }
+        
+        .btn-group-main { display: flex; justify-content: center; align-items: center; gap: 24px; }
+        .btn-ctrl { width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #fff; font-size: 20px; cursor: pointer; transition: 0.3s; }
+        .btn-ctrl:hover { border-color: var(--primary); color: var(--primary); transform: scale(1.1); }
+        .btn-play { width: 84px; height: 84px; background: var(--primary); color: #000; font-size: 32px; display: flex; justify-content: center; align-items: center; }
+        .btn-play .icon { transition: transform 0.3s var(--curve-spring), opacity 0.2s; }
+
+        .lrc-viewport { height: 100%; overflow-y: auto; text-align: center; padding: 50% 20px; scroll-behavior: smooth; }
+        .lrc-line { font-size: 18px; line-height: 2.2; color: rgba(255,255,255,0.35); transition: 0.4s; }
+        .lrc-line.active { color: #fff; font-size: 26px; font-weight: 700; text-shadow: 0 0 20px rgba(154,200,226,0.6); transform: scale(1.05); }
+
+        /* ================= 沉浸模式 UI (Immersive Overlay) ================= */
+        .immersive-ui {
+            position: fixed; inset: 0; z-index: 20; pointer-events: none;
+            display: flex; flex-direction: column; justify-content: space-between;
+            padding: 40px 50px; opacity: 0; transition: opacity 0.5s;
+        }
+        .immersive-ui * { pointer-events: auto; }
+
+        .imm-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .imm-track-card {
+            display: flex; gap: 20px; align-items: center;
+            background: rgba(0,0,0,0.3); backdrop-filter: blur(10px);
+            padding: 15px 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .imm-art { width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 1px solid rgba(255,255,255,0.2); }
+        .imm-info h1 { font-size: 24px; font-weight: 800; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+        .imm-info p { font-size: 16px; color: var(--primary); }
+
+        .imm-footer { display: flex; flex-direction: column; align-items: center; gap: 30px; }
+        
+        /* 电影级双行字幕 */
+        .subtitle-lrc {
+            text-align: center; min-height: 80px; display: flex; flex-direction: column; justify-content: flex-end;
+            text-shadow: 0 4px 15px rgba(0,0,0,0.9), 0 0 20px var(--primary);
+        }
+        .subtitle-lrc .curr { font-size: 32px; font-weight: 900; color: #fff; letter-spacing: 1px; transition: 0.3s; }
+        .subtitle-lrc .next { font-size: 18px; font-weight: 500; color: rgba(255,255,255,0.5); margin-top: 5px; transition: 0.3s; }
+
+        .imm-controls {
+            width: 100%; max-width: 800px; display: flex; align-items: center; gap: 20px;
+            background: rgba(0,0,0,0.4); backdrop-filter: blur(15px); padding: 20px 40px; border-radius: 30px;
+        }
+        .imm-prog { flex: 1; margin: 0 20px; }
+
+        /* ================= 模式切换逻辑 (View Transitions API) ================= */
+        body.is-immersive .player-wrapper { display: none; }
+        body.is-immersive .immersive-ui { opacity: 1; }
+        body.is-immersive #globalCanvas { opacity: 1; z-index: 5; } /* 沉浸模式下层级提至背景最上 */
+        body.is-immersive #bg-layer-img { filter: blur(10px) brightness(0.2); } /* 降低模糊，让背景更清晰一点 */
+
+        /* 原生丝滑过渡动画定义 */
+        ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.8s; animation-timing-function: var(--curve-spring); }
+
+        .hide { display: none !important; }
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- 背景层与全局画布 -->
+    <div id="bg-layer-img"></div>
+    <canvas id="globalCanvas"></canvas>
+
+    <!-- 常规模式：全功能播放器 -->
+    <div class="player-wrapper" id="mainPlayer">
+        <div class="header">
+            <div class="brand">MBolka Ultimate</div>
+            <div class="nav-actions">
+                <button class="btn-glass" id="btnToggleImm" style="background:var(--primary); color:#000;">✨ 沉浸模式</button>
+                <button class="btn-glass" onclick="document.getElementById('folderInput').click()">📁 载入目录</button>
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <div class="col col-album">
+            <div class="art-box"><img id="mainArt" class="art-img" style="view-transition-name: album-art;" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+"></div>
+            <div class="track-info">
+                <div class="track-title" id="mainTitle" style="view-transition-name: track-title;">MBolka Ultimate</div>
+                <div class="track-artist" id="mainArtist" style="view-transition-name: track-artist;">点击右上方载入音乐目录</div>
+            </div>
+        </div>
+
+        <!-- 中部：控制 -->
+        <div class="col col-controls">
+            <div class="progress-area" id="mainProgWrap">
+                <div class="prog-bg"><div class="prog-fill" id="mainProgFill"></div></div>
+                <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; color:var(--text-sub); font-family:monospace;">
+                    <span id="mainTimeCur">00:00</span><span id="mainTimeTot">00:00</span>
+                </div>
+            </div>
+            <div class="btn-group-main">
+                <button class="btn-ctrl active" id="btnShuffle" title="随机播放">🔀</button>
+                <button class="btn-ctrl" id="btnPrev">⏮</button>
+                <button class="btn-play" id="btnPlay"><div class="icon">▶</div></button>
+                <button class="btn-ctrl" id="btnNext">⏭</button>
+            </div>
+        </div>
+
+        <!-- 右侧：歌词 -->
+        <div class="col col-lyrics" id="mainLrcBox">
+            <div class="lrc-viewport" id="mainLrcView">
+                <div class="lrc-line" style="opacity: 0.5; font-size: 14px;">载入歌曲后自动解析同名 .lrc 歌词</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 沉浸模式：全屏叠加层 (Immersive UI) -->
+<div class="immersive-ui" id="immUi">
+    <div class="imm-header">
+        <div class="imm-track-card" id="immCard">
+            <img class="imm-art" id="immArt" style="view-transition-name: album-art;" src="">
+            <div class="imm-info">
+                <h1 id="immTitle" style="view-transition-name: track-title;">MBolka</h1>
+                <p id="immArtist" style="view-transition-name: track-artist;">Immersive</p>
+            </div>
+        </div>
+        <button class="btn-glass" id="btnExitImm" style="background:rgba(0,0,0,0.5);">🔙 退出沉浸 (Esc)</button>
+    </div>
+
+    <div class="imm-footer">
+        <!-- 动态字幕 -->
+        <div class="subtitle-lrc" id="immSubtitle">
+            <div class="curr" id="subCurr">享受极致音乐视听</div>
+            <div class="next" id="subNext">Waiting for track...</div>
+        </div>
+
+        <!-- 沉浸控制台 -->
+        <div class="imm-controls">
+            <button class="btn-ctrl" id="immPrev" style="border:none; width:40px; height:40px;">⏮</button>
+            <button class="btn-play" id="immPlay" style="width:50px; height:50px; font-size:20px; flex-shrink:0;"><div class="icon">▶</div></button>
+            <button class="btn-ctrl" id="immNext" style="border:none; width:40px; height:40px;">⏭</button>
+            
+            <div class="imm-prog progress-area" id="immProgWrap">
+                <div class="prog-bg"><div class="prog-fill" id="immProgFill"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /** === 1. 核心状态与配置 === */
+    const audio = new Audio(); audio.crossOrigin = "anonymous";
+    let audioCtx, analyser, dataArray;
+    let playlist = [], lrcMap = new Map(), playHistory = [];
+    let currentIndex = -1, isPlaying = false, isShuffle = true; // 默认开启随机
+    let parsedLyrics = [];
+
+    // 视图元素引用
+    const el = {
+        mainPlayer: document.getElementById('mainPlayer'),
+        bgImg: document.getElementById('bg-layer-img'),
+        mainArt: document.getElementById('mainArt'), immArt: document.getElementById('immArt'),
+        mainTitle: document.getElementById('mainTitle'), immTitle: document.getElementById('immTitle'),
+        mainArtist: document.getElementById('mainArtist'), immArtist: document.getElementById('immArtist'),
+        mainProgFill: document.getElementById('mainProgFill'), immProgFill: document.getElementById('immProgFill'),
+        mainTimeCur: document.getElementById('mainTimeCur'), mainTimeTot: document.getElementById('mainTimeTot'),
+        mainLrcView: document.getElementById('mainLrcView'), mainLrcBox: document.getElementById('mainLrcBox'),
+        subCurr: document.getElementById('subCurr'), subNext: document.getElementById('subNext'), immSubtitle: document.getElementById('immSubtitle'),
+        immCard: document.getElementById('immCard')
+    };
+
+    /** === 2. 视觉引擎 (Canvas, 粒子, 响应式动效) === */
+    const canvas = document.getElementById('globalCanvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [], ripples = [];
+    let emitterX = window.innerWidth / 2, emitterY = window.innerHeight / 2;
+    let targetX = emitterX, targetY = emitterY;
+    let idleFrames = 0, currentHue = 210, time = 0;
+    let gamepadActive = false;
+
+    window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+    window.dispatchEvent(new Event('resize'));
+
+    class Particle {
+        constructor(x, y, vx, vy, color, size) {
+            this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+            this.color = color; this.size = size; this.life = 1;
+        }
+        update() { this.x += this.vx; this.y += this.vy; this.life -= 0.015; this.size *= 0.98; }
+        draw() {
+            ctx.globalAlpha = this.life; ctx.fillStyle = this.color;
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+    
+    class Ripple {
+        constructor(x, y, color) { this.x = x; this.y = y; this.r = 5; this.color = color; this.life = 1; }
+        update() { this.r += 12; this.life -= 0.04; }
+        draw() {
+            ctx.globalAlpha = Math.max(0, this.life); ctx.strokeStyle = this.color; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.stroke();
+        }
+    }
+
+    function initAudioVis() {
+        if (audioCtx) return;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+        const src = audioCtx.createMediaElementSource(audio);
+        src.connect(analyser); analyser.connect(audioCtx.destination);
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        renderCanvas();
+    }
+
+    function renderCanvas() {
+        requestAnimationFrame(renderCanvas);
+        time += 0.015;
+        idleFrames++;
+
+        // 带有拖尾的屏幕清除
+        ctx.fillStyle = 'rgba(10, 10, 26, 0.2)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 平滑移动发射源 (闲置状态李萨如曲线游荡)
+        if (idleFrames > 120 && !gamepadActive) {
+            targetX = canvas.width / 2 + Math.sin(time * 2) * canvas.width * 0.35;
+            targetY = canvas.height / 2 + Math.cos(time * 1.5) * canvas.height * 0.35;
+        }
+        emitterX += (targetX - emitterX) * 0.05;
+        emitterY += (targetY - emitterY) * 0.05;
+
+        // 绘制频谱与心跳畸变
+        if (analyser && isPlaying) {
+            analyser.getByteFrequencyData(dataArray);
+            const barW = (canvas.width / dataArray.length) * 2;
+            
+            // 低音能量心跳
+            const bass = dataArray[2] + dataArray[3];
+            if (bass > 450) { 
+                ripples.push(new Ripple(emitterX, emitterY, `hsl(${currentHue}, 80%, 70%)`)); 
+                currentHue = (currentHue + 2) % 360; 
+            }
+
+            // 底部频谱
+            for (let i = 0; i < dataArray.length; i++) {
+                const h = (dataArray[i] / 255) * canvas.height * 0.5;
+                ctx.fillStyle = `hsla(${currentHue}, 70%, 50%, 0.15)`;
+                ctx.fillRect(i * barW, canvas.height - h, barW, h);
+            }
+            
+            // 自动喷射粒子
+            if (bass > 300) spawnParticles(emitterX, emitterY, 1, `hsl(${currentHue}, 80%, 70%)`);
+        }
+
+        // 更新与绘制粒子/波纹
+        particles = particles.filter(p => { p.update(); p.draw(); return p.life > 0; });
+        ripples = ripples.filter(r => { r.update(); r.draw(); return r.life > 0; });
+    }
+
+    function spawnParticles(x, y, count, color) {
+        for (let i = 0; i < count; i++) {
+            const ang = Math.random() * Math.PI * 2; const spd = Math.random() * 5 + 2;
+            particles.push(new Particle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, color || '#fff', Math.random()*5+2));
+        }
+    }
+
+    // 鼠标接管发射源
+    window.addEventListener('mousemove', (e) => { targetX = e.clientX; targetY = e.clientY; idleFrames = 0; gamepadActive = false; });
+    window.addEventListener('click', (e) => { ripples.push(new Ripple(e.clientX, e.clientY, '#fff')); spawnParticles(e.clientX, e.clientY, 15, `hsl(${currentHue}, 80%, 80%)`); });
+
+    /** === 3. 丝滑视图过渡 (View Transitions) === */
+    function toggleImmersiveMode() {
+        if (!document.startViewTransition) { document.body.classList.toggle('is-immersive'); return; }
+        // 触发 Chrome 111+ 原生丝滑形变动画
+        document.startViewTransition(() => { document.body.classList.toggle('is-immersive'); });
+    }
+    document.getElementById('btnToggleImm').onclick = toggleImmersiveMode;
+    document.getElementById('btnExitImm').onclick = toggleImmersiveMode;
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('is-immersive')) toggleImmersiveMode(); });
+
+    /** === 4. 异步加载与数据解析 === */
+    document.getElementById('folderInput').onchange = async (e) => {
+        const files = Array.from(e.target.files); if (!files.length) return;
+        audio.pause(); playlist = []; lrcMap.clear(); playHistory = [];
+
+        const audios = files.filter(f => /\.(mp3|flac|wav|m4a)$/i.test(f.name));
+        files.filter(f => f.name.endsWith('.lrc')).forEach(f => lrcMap.set(f.name.replace('.lrc','').toLowerCase(), f));
+
+        if (!audios.length) return;
+
+        // 占位极速构建
+        playlist = audios.map(f => ({ title: f.name.replace(/\.[^/.]+$/, ""), artist: "解析中...", url: URL.createObjectURL(f), file: f, art: null }));
+        
+        currentIndex = 0; playSong(0); // 秒开第一首
+
+        // 后台分块解析元数据
+        let scanIdx = 0;
+        const parseChunk = () => {
+            const end = Math.min(scanIdx + 10, playlist.length);
+            for (let i = scanIdx; i < end; i++) {
+                jsmediatags.read(playlist[i].file, {
+                    onSuccess: (t) => {
+                        playlist[i].title = t.tags.title || playlist[i].title;
+                        playlist[i].artist = t.tags.artist || "未知歌手";
+                        if (t.tags.picture) {
+                            const d = t.tags.picture.data; let b = ""; for(let j=0; j<d.length; j++) b += String.fromCharCode(d[j]);
+                            playlist[i].art = `data:${t.tags.picture.format};base64,${btoa(b)}`;
+                        }
+                        if (i === currentIndex) updateUI(playlist[i]); // 更新正在播放的视觉
+                    }
+                });
+            }
+            scanIdx = end;
+            if (scanIdx < playlist.length) requestAnimationFrame(parseChunk);
+        };
+        requestAnimationFrame(parseChunk);
+    };
+
+    /** === 5. 播放与历史漫游逻辑 (修复随机返回) === */
+    function playSong(idx) {
+        if (idx < 0 || idx >= playlist.length) return;
+        currentIndex = idx; const s = playlist[idx];
+        audio.src = s.url; updateUI(s); parseLrc(s);
+        audio.play().then(() => { isPlaying = true; updatePlayBtnAnim(); initAudioVis(); updateMediaSession(s); }).catch(()=>{});
+    }
+
+    function goNext() {
+        if (!playlist.length) return;
+        if (isShuffle) {
+            playHistory.push(currentIndex); // 压入历史栈
+            let next;
+            if (playlist.length > 1) { do { next = Math.floor(Math.random() * playlist.length); } while (next === currentIndex); } 
+            else next = 0;
+            playSong(next);
+        } else {
+            playHistory.push(currentIndex);
+            playSong((currentIndex + 1) % playlist.length);
+        }
+    }
+
+    function goPrev() {
+        if (!playlist.length) return;
+        if (isShuffle && playHistory.length > 0) {
+            let prev = playHistory.pop(); // 从历史栈弹出
+            playSong(prev);
+        } else {
+            playSong((currentIndex - 1 + playlist.length) % playlist.length);
+        }
+    }
+
+    function togglePlay() {
+        if(!playlist.length) return document.getElementById('folderInput').click();
+        audio.paused ? audio.play() : audio.pause();
+        isPlaying = !audio.paused;
+        updatePlayBtnAnim(); initAudioVis();
+    }
+
+    document.getElementById('btnShuffle').onclick = () => {
+        isShuffle = !isShuffle; 
+        document.getElementById('btnShuffle').classList.toggle('active', isShuffle);
+    };
+
+    [document.getElementById('btnPlay'), document.getElementById('immPlay')].forEach(b => b.onclick = togglePlay);
+    [document.getElementById('btnNext'), document.getElementById('immNext')].forEach(b => b.onclick = goNext);
+    [document.getElementById('btnPrev'), document.getElementById('immPrev')].forEach(b => b.onclick = goPrev);
+    audio.onended = goNext;
+
+    // 按钮形变动画
+    function updatePlayBtnAnim() {
+        document.querySelectorAll('.btn-play .icon').forEach(icon => {
+            icon.style.transform = 'scale(0) rotate(180deg)'; icon.style.opacity = '0';
+            setTimeout(() => {
+                icon.innerHTML = isPlaying ? '⏸' : '▶';
+                icon.style.transform = 'scale(1) rotate(0deg)'; icon.style.opacity = '1';
+            }, 200);
+        });
+    }
+
+    /** === 6. UI 更新与媒体会话 === */
+    function updateUI(s) {
+        const defArt = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+";
+        el.mainTitle.innerText = s.title; el.immTitle.innerText = s.title;
+        el.mainArtist.innerText = s.artist; el.immArtist.innerText = s.artist;
+        
+        if (s.art) {
+            el.mainArt.src = s.art; el.immArt.src = s.art;
+            el.bgImg.style.backgroundImage = `url(${s.art})`; el.bgImg.classList.add('active');
+            el.immCard.style.display = 'flex';
+        } else {
+            el.mainArt.src = defArt; el.bgImg.classList.remove('active');
+            el.immCard.style.display = 'none'; // 无封面时隐藏沉浸界面的卡片，更加极致全屏
+        }
+    }
+
+    function updateMediaSession(s) {
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: s.title, artist: s.artist,
+                artwork: s.art ? [{ src: s.art, sizes: '512x512', type: 'image/jpeg' }] : []
+            });
+            navigator.mediaSession.setActionHandler('play', togglePlay);
+            navigator.mediaSession.setActionHandler('pause', togglePlay);
+            navigator.mediaSession.setActionHandler('previoustrack', goPrev);
+            navigator.mediaSession.setActionHandler('nexttrack', goNext);
+        }
+    }
+
+    /** === 7. 歌词解析与双行字幕同步 === */
+    async function parseLrc(song) {
+        parsedLyrics = []; el.mainLrcView.innerHTML = ''; el.subCurr.innerText = ''; el.subNext.innerText = '';
+        const base = song.file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+        let file = lrcMap.get(base);
+        if(!file) for (let [k, v] of lrcMap) if (base.includes(k) || k.includes(base)) { file = v; break; }
+
+        if (!file) {
+            el.mainLrcBox.classList.add('hide'); el.immSubtitle.classList.add('hide'); return;
+        }
+
+        el.mainLrcBox.classList.remove('hide'); el.immSubtitle.classList.remove('hide');
+        const text = await new Promise(res => { const r = new FileReader(); r.onload=e=>res(e.target.result); r.readAsText(file, 'utf-8'); });
+        
+        text.split('\n').forEach(line => {
+            const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/);
+            if (match) {
+                const txt = line.replace(/\[.*?\]/g, '').trim();
+                if (txt) parsedLyrics.push({ time: parseInt(match[1])*60 + parseInt(match[2]) + parseInt(match[3])/1000, text: txt });
+            }
+        });
+        parsedLyrics.sort((a,b)=>a.time - b.time);
+        parsedLyrics.forEach(l => { const d = document.createElement('div'); d.className='lrc-line'; d.innerText=l.text; el.mainLrcView.appendChild(d); });
+    }
+
+    audio.ontimeupdate = () => {
+        if (!audio.duration) return;
+        const p = (audio.currentTime / audio.duration) * 100;
+        el.mainProgFill.style.width = p + '%'; el.immProgFill.style.width = p + '%';
+        el.mainTimeCur.innerText = formatT(audio.currentTime); el.mainTimeTot.innerText = formatT(audio.duration);
+
+        // 歌词同步
+        if (!parsedLyrics.length) return;
+        let actIdx = -1;
+        for (let i=0; i<parsedLyrics.length; i++) { if (audio.currentTime >= parsedLyrics[i].time - 0.3) actIdx = i; else break; }
+        
+        // 常规模式滚动
+        const lines = el.mainLrcView.querySelectorAll('.lrc-line');
+        lines.forEach((l, i) => {
+            if(i === actIdx) {
+                if(!l.classList.contains('active')) { l.classList.add('active'); el.mainLrcView.scrollTo({ top: l.offsetTop - el.mainLrcView.clientHeight/2, behavior: 'smooth' }); }
+            } else l.classList.remove('active');
+        });
+
+        // 沉浸模式双行字幕
+        if (actIdx >= 0) {
+            if (el.subCurr.innerText !== parsedLyrics[actIdx].text) {
+                el.subCurr.style.opacity = 0; el.subNext.style.opacity = 0;
+                setTimeout(() => {
+                    el.subCurr.innerText = parsedLyrics[actIdx].text;
+                    el.subNext.innerText = parsedLyrics[actIdx+1] ? parsedLyrics[actIdx+1].text : '';
+                    el.subCurr.style.opacity = 1; el.subNext.style.opacity = 1;
+                }, 200);
+            }
+        }
+    };
+
+    const formatT = (s) => { const m=Math.floor(s/60), sec=Math.floor(s%60); return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; };
+
+    // 进度条拖拽
+    const seek = (e, wrap) => { if(audio.duration) audio.currentTime = (e.offsetX / wrap.offsetWidth) * audio.duration; spawnParticles(e.clientX, e.clientY, 10, '#fff'); };
+    document.getElementById('mainProgWrap').onclick = (e) => seek(e, document.getElementById('mainProgWrap'));
+    document.getElementById('immProgWrap').onclick = (e) => seek(e, document.getElementById('immProgWrap'));
+
+    /** === 8. 手柄控制支持 === */
+    let prevBtns = new Array(17).fill(false);
+    function pollGamepad() {
+        const gp = navigator.getGamepads()[0];
+        if (gp) {
+            idleFrames = 0; gamepadActive = true;
+            // 左摇杆控制粒子源
+            if (Math.abs(gp.axes[0]) > 0.1) targetX += gp.axes[0] * 15;
+            if (Math.abs(gp.axes[1]) > 0.1) targetY += gp.axes[1] * 15;
+            targetX = Math.max(0, Math.min(canvas.width, targetX)); targetY = Math.max(0, Math.min(canvas.height, targetY));
+
+            const b = gp.buttons.map(x => x.pressed);
+            if (b[0] && !prevBtns[0]) { togglePlay(); spawnParticles(targetX, targetY, 20); ripples.push(new Ripple(targetX, targetY, '#fff')); } // A
+            if (b[4] && !prevBtns[4]) goPrev(); // LB
+            if (b[5] && !prevBtns[5]) goNext(); // RB
+            if (gp.buttons[7].value > 0.1) spawnParticles(targetX, targetY, 3, `hsl(${currentHue}, 100%, 70%)`); // RT 喷射
+            prevBtns = b;
+        }
+        requestAnimationFrame(pollGamepad);
+    }
+    window.addEventListener("gamepadconnected", () => requestAnimationFrame(pollGamepad));
+
+</script>
+</body>
+</html>

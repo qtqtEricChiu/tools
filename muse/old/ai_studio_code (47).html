@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka FullScreen - Pro Loaded</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        :root { --primary: #9ac8e2; --glass: rgba(10, 10, 25, 0.8); }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; color: #fff; font-family: system-ui; overflow: hidden; height: 100vh; }
+
+        /* 全屏画布 */
+        #visCanvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+
+        /* 悬浮 UI */
+        .ui-layer { position: relative; z-index: 10; height: 100vh; padding: 40px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+        .ui-layer * { pointer-events: auto; }
+
+        .top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .card { background: var(--glass); backdrop-filter: blur(20px); padding: 20px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.1); display: flex; gap: 20px; min-width: 350px; }
+        .art { width: 80px; height: 80px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0; }
+        .art img { width: 100%; height: 100%; object-fit: cover; }
+        .info h1 { font-size: 20px; margin-bottom: 5px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .info p { color: var(--primary); font-size: 14px; }
+
+        .bottom { width: 100%; max-width: 900px; margin: 0 auto; background: var(--glass); backdrop-filter: blur(20px); border-radius: 30px; padding: 25px 40px; border: 1px solid rgba(255,255,255,0.1); }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative; margin-bottom: 15px; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; box-shadow: 0 0 15px var(--primary); transition: width 0.1s linear; }
+
+        .btns { display: flex; justify-content: space-between; align-items: center; }
+        .group { display: flex; align-items: center; gap: 25px; }
+        button { background: none; border: none; color: white; cursor: pointer; font-size: 20px; transition: 0.3s; }
+        button:hover { transform: scale(1.1); color: var(--primary); }
+        .play-btn { width: 55px; height: 55px; background: var(--primary); color: #000; border-radius: 50%; font-size: 24px; }
+        button.active { color: var(--primary); text-shadow: 0 0 10px var(--primary); }
+
+        #loadStatus { position: fixed; top: 10px; right: 10px; font-size: 10px; color: var(--primary); opacity: 0.5; }
+        .toast { position: fixed; bottom: 150px; left: 50%; transform: translateX(-50%); background: var(--primary); color: #000; padding: 10px 25px; border-radius: 20px; font-weight: bold; z-index: 1000; display: none; }
+    </style>
+</head>
+<body>
+
+    <canvas id="visCanvas"></canvas>
+    <div id="loadStatus">库: 0 / 0</div>
+
+    <div class="ui-layer">
+        <div class="top">
+            <div class="card">
+                <div class="art"><img id="albumArt" src=""></div>
+                <div class="info">
+                    <h1 id="songTitle">等待载入曲库</h1>
+                    <p id="songArtist">点击右侧按钮选择文件夹</p>
+                </div>
+            </div>
+            <button onclick="document.getElementById('fIn').click()" style="background:var(--primary); color:#000; padding:10px 20px; border-radius:12px; font-size:14px; font-weight:bold;">📁 载入本地目录</button>
+            <input type="file" id="fIn" webkitdirectory directory multiple style="display:none">
+        </div>
+
+        <div class="bottom">
+            <div class="prog-bg" id="progWrap"><div class="prog-fill" id="progFill"></div></div>
+            <div class="btns">
+                <div class="group">
+                    <button id="btnShuffle">🔀</button>
+                    <button id="btnPrev">⏮</button>
+                    <button class="play-btn" id="btnPlay">▶</button>
+                    <button id="btnNext">⏭</button>
+                </div>
+                <div id="timeInfo" style="font-family:monospace; font-size:14px; opacity:0.7;">00:00 / 00:00</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        /** === 核心播放状态 === */
+        const audio = new Audio(); audio.crossOrigin = "anonymous";
+        let playlist = [], currentIndex = -1, isShuffle = false;
+        let audioCtx, analyser, dataArray;
+        let particles = [];
+        
+        // 手柄状态
+        let gamepadConnected = false, prevBtns = new Array(17).fill(false);
+        let currentHue = 210, emitterX, emitterY;
+
+        const el = {
+            title: document.getElementById('songTitle'), artist: document.getElementById('songArtist'),
+            art: document.getElementById('albumArt'), fill: document.getElementById('progFill'),
+            time: document.getElementById('timeInfo'), load: document.getElementById('loadStatus'),
+            shuffleBtn: document.getElementById('btnShuffle')
+        };
+
+        /** === 1. 核心修复：异步分块曲库载入 === */
+        document.getElementById('fIn').onchange = async (e) => {
+            const files = Array.from(e.target.files).filter(f => /\.(mp3|flac|wav|m4a)$/i.test(f.name));
+            if (!files.length) return;
+
+            // 立即停止当前播放并清空
+            audio.pause();
+            playlist = [];
+            
+            // 步骤 A: 瞬间建立占位列表，保证大曲库不卡死
+            playlist = files.map(f => ({
+                title: f.name.replace(/\.[^/.]+$/, ""),
+                artist: "解析中...",
+                url: URL.createObjectURL(f),
+                file: f,
+                art: null,
+                parsed: false
+            }));
+
+            el.load.innerText = `发现: ${playlist.length} 首`;
+            currentIndex = 0;
+            playSong(0); // 立即播放第一首
+
+            // 步骤 B: 异步分块解析元数据 (封面/标签)
+            let scanIndex = 0;
+            const parseBatch = async () => {
+                const batchSize = 8; // 每帧处理8个，兼顾速度与流畅
+                const end = Math.min(scanIndex + batchSize, playlist.length);
+                
+                for (let i = scanIndex; i < end; i++) {
+                    await parseMetadata(i);
+                }
+
+                scanIndex = end;
+                el.load.innerText = `已解析: ${scanIndex} / ${playlist.length}`;
+
+                if (scanIndex < playlist.length) {
+                    requestAnimationFrame(parseBatch);
+                } else {
+                    showToast(`✅ 曲库加载完毕 (${playlist.length}首)`);
+                }
+            };
+            requestAnimationFrame(parseBatch);
+        };
+
+        async function parseMetadata(idx) {
+            return new Promise(res => {
+                jsmediatags.read(playlist[idx].file, {
+                    onSuccess: (t) => {
+                        playlist[idx].title = t.tags.title || playlist[idx].title;
+                        playlist[idx].artist = t.tags.artist || "未知歌手";
+                        if (t.tags.picture) {
+                            const d = t.tags.picture.data;
+                            let b = ""; for(let i=0; i<d.length; i++) b += String.fromCharCode(d[i]);
+                            playlist[idx].art = `data:${t.tags.picture.format};base64,${btoa(b)}`;
+                        }
+                        playlist[idx].parsed = true;
+                        // 如果解析到的是当前播放的歌，立即更新UI
+                        if (idx === currentIndex) updateUI(playlist[idx]);
+                        res();
+                    },
+                    onError: () => { playlist[idx].parsed = true; res(); }
+                });
+            });
+        }
+
+        /** === 2. 核心修复：随机播放逻辑修复 === */
+        const playSong = (idx) => {
+            if (idx < 0 || idx >= playlist.length) return;
+            currentIndex = idx;
+            const s = playlist[idx];
+            audio.src = s.url;
+            updateUI(s);
+            audio.play().catch(()=>{});
+            if (!audioCtx) initAudio();
+        };
+
+        const goNext = () => {
+            if (!playlist.length) return;
+            if (isShuffle) {
+                // 真正的随机选取
+                let next;
+                if (playlist.length > 1) {
+                    do { next = Math.floor(Math.random() * playlist.length); } while (next === currentIndex);
+                } else {
+                    next = 0;
+                }
+                playSong(next);
+            } else {
+                playSong((currentIndex + 1) % playlist.length);
+            }
+        };
+
+        const goPrev = () => {
+            if (!playlist.length) return;
+            playSong((currentIndex - 1 + playlist.length) % playlist.length);
+        };
+
+        const toggleShuffle = () => {
+            isShuffle = !isShuffle;
+            el.shuffleBtn.classList.toggle('active', isShuffle);
+            showToast(isShuffle ? "🔀 随机模式开启" : "⇄ 顺序模式开启");
+        };
+
+        document.getElementById('btnShuffle').onclick = toggleShuffle;
+        document.getElementById('btnNext').onclick = goNext;
+        document.getElementById('btnPrev').onclick = goPrev;
+        document.getElementById('btnPlay').onclick = () => audio.paused ? audio.play() : audio.pause();
+        audio.onended = goNext; // 确保播放结束自动进入随机或顺序下一首
+
+        /** === 3. 视觉与手柄核心 === */
+        function initAudio() {
+            audioCtx = new AudioContext();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            const src = audioCtx.createMediaElementSource(audio);
+            src.connect(analyser); analyser.connect(audioCtx.destination);
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const canvas = document.getElementById('visCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                const barW = (canvas.width / dataArray.length) * 2;
+                for (let i=0; i<dataArray.length; i++) {
+                    const h = (dataArray[i]/255) * canvas.height * 0.45;
+                    ctx.fillStyle = `hsla(${currentHue}, 70%, 50%, 0.15)`;
+                    ctx.fillRect(i*barW, canvas.height - h, barW, h);
+                }
+                // 节奏点燃
+                if (dataArray[5] > 210) spawnParticles(emitterX || canvas.width/2, emitterY || canvas.height/2, 3);
+            }
+
+            particles = particles.filter(p => {
+                p.x += p.vx; p.y += p.vy; p.life -= 0.01;
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+                return p.life > 0;
+            });
+        }
+
+        function spawnParticles(x, y, count) {
+            for(let i=0; i<count; i++) {
+                const ang = Math.random()*Math.PI*2;
+                const spd = Math.random()*6+2;
+                particles.push({ x, y, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd, life:1, size:Math.random()*5+2, color:`hsl(${currentHue}, 80%, 70%)` });
+            }
+        }
+
+        /** === 4. 手柄映射 === */
+        window.addEventListener("gamepadconnected", () => gamepadConnected = true);
+        const poll = () => {
+            const gp = navigator.getGamepads()[0];
+            if (gp) {
+                emitterX = (gp.axes[0] + 1) * window.innerWidth / 2;
+                emitterY = (gp.axes[1] + 1) * window.innerHeight / 2;
+                if (Math.abs(gp.axes[2]) > 0.1) currentHue = (currentHue + gp.axes[2]*5) % 360;
+                
+                const btns = gp.buttons.map(b => b.pressed);
+                if (btns[0] && !prevBtns[0]) document.getElementById('btnPlay').click(); // A
+                if (btns[2] && !prevBtns[2]) toggleShuffle(); // X
+                if (btns[4] && !prevBtns[4]) goPrev(); // LB
+                if (btns[5] && !prevBtns[5]) goNext(); // RB
+                if (gp.buttons[7].value > 0.1) spawnParticles(emitterX, emitterY, 2); // RT
+                prevBtns = btns;
+            }
+            requestAnimationFrame(poll);
+        };
+        poll();
+
+        /** === UI 通用函数 === */
+        function updateUI(s) {
+            el.title.innerText = s.title;
+            el.artist.innerText = s.artist;
+            el.art.src = s.art || "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iIzFExMWEyZSIvPjwvc3ZnPg==";
+        }
+
+        audio.ontimeupdate = () => {
+            if (!audio.duration) return;
+            const p = (audio.currentTime / audio.duration) * 100;
+            el.fill.style.width = p + '%';
+            el.time.innerText = `${format(audio.currentTime)} / ${format(audio.duration)}`;
+        };
+
+        const format = (s) => { const m=Math.floor(s/60), sec=Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; };
+        const showToast = (m) => { const t=document.getElementById('toast'); t.innerText=m; t.style.display='block'; setTimeout(()=>t.style.display='none', 3000); };
+        
+        document.getElementById('progWrap').onclick = (e) => {
+            if (!audio.duration) return;
+            audio.currentTime = (e.offsetX / e.currentTarget.offsetWidth) * audio.duration;
+        };
+    </script>
+</body>
+</html>

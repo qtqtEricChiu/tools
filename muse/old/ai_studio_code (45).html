@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka Player - Gamepad Pro</title>
+    <!-- jsmediatags: 提取音频元数据 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        /* ================= 核心变量与重置 ================= */
+        :root {
+            --primary: #9ac8e2;
+            --primary-light: #b4d6ea;
+            --bg-dark: #0a0a1a;
+            --bg-dark-light: #1a1a2e;
+            --text-main: #f0f8ff;
+            --text-sub: #8a8aa0;
+            --glass-bg: rgba(26, 26, 46, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+            --bg-blur: 40px;
+            --curve-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --curve-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-dark-light) 50%, var(--bg-dark) 100%);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ================= 动画特效 ================= */
+        @keyframes appFadeIn {
+            from { opacity: 0; transform: translateY(25px) scale(0.96); filter: blur(12px); }
+            to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes floatArt {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            25% { transform: translateY(-8px) rotate(1deg); }
+            75% { transform: translateY(6px) rotate(-1deg); }
+        }
+        @keyframes glowPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(0,0,0,0.3); }
+            50% { box-shadow: 0 0 35px var(--primary), 0 0 15px rgba(0,0,0,0.4); }
+        }
+
+        /* ================= 动态背景 ================= */
+        #bg-layer-img, #bg-layer-color {
+            position: fixed; top: -10%; left: -10%; width: 120%; height: 120%;
+            z-index: -2; opacity: 0; pointer-events: none;
+            transition: opacity 1.5s var(--curve-smooth);
+        }
+        #bg-layer-img {
+            background-size: cover; background-position: center;
+            filter: blur(var(--bg-blur)) brightness(0.5) saturate(1.2);
+        }
+        #bg-layer-img.active, #bg-layer-color.active { opacity: 1; }
+
+        /* ================= 布局主体 ================= */
+        .player-wrapper {
+            width: 96vw; max-width: 1300px; height: 92vh;
+            background: var(--glass-bg);
+            backdrop-filter: blur(35px) saturate(180%);
+            -webkit-backdrop-filter: blur(35px) saturate(180%);
+            border-radius: 32px; border: 1px solid var(--glass-border);
+            box-shadow: var(--glass-shadow);
+            display: flex; flex-direction: column;
+            animation: appFadeIn 1s var(--curve-spring) both;
+            overflow: hidden; z-index: 10;
+        }
+
+        .header {
+            padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;
+            background: rgba(0, 0, 0, 0.15); border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .brand { font-size: 20px; font-weight: 800; display: flex; gap: 10px; }
+        .nav-actions { display: flex; gap: 10px; }
+
+        .btn-glass {
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main); padding: 8px 16px; border-radius: 12px;
+            cursor: pointer; font-size: 13px; transition: all 0.3s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .btn-glass:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); border-color: var(--primary); }
+        .btn-glass.active { background: var(--primary); color: #000; }
+
+        /* 核心网格 */
+        .content-grid {
+            display: flex; flex: 1; padding: 20px 30px; gap: 30px;
+            overflow: hidden; justify-content: center; position: relative;
+        }
+
+        .col { display: flex; flex-direction: column; transition: all 0.5s; z-index: 5; }
+        .col-album { flex: 0 0 320px; align-items: center; justify-content: center; gap: 20px; }
+        .col-controls { flex: 1; max-width: 550px; justify-content: center; gap: 25px; }
+        .col-lyrics { 
+            flex: 0 0 350px; background: rgba(0,0,0,0.1); border-radius: 20px; 
+            overflow: hidden; display: none; /* 默认隐藏 */
+            mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+        }
+
+        /* 专辑封面 */
+        .art-box {
+            width: 280px; height: 280px; border-radius: 24px; overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
+            animation: floatArt 8s ease-in-out infinite;
+        }
+        .art-img { width: 100%; height: 100%; object-fit: cover; }
+        .track-title { font-size: 28px; font-weight: 800; text-align: center; line-height: 1.2; }
+        .track-artist { font-size: 16px; color: var(--text-sub); text-align: center; margin-top: 5px;}
+
+        /* 可视化区域 - 全屏化背景感 */
+        .visual-area {
+            position: relative; width: 100%; height: 120px; border-radius: 16px; overflow: hidden;
+            background: rgba(0,0,0,0.2);
+        }
+        .vis-canvas { width: 100%; height: 100%; }
+
+        /* 歌词引擎样式 */
+        .lrc-viewport { height: 100%; overflow-y: auto; text-align: center; padding: 50% 15px; scroll-behavior: smooth; }
+        .lrc-line { font-size: 16px; line-height: 2.2; color: rgba(255,255,255,0.3); transition: all 0.4s; min-height: 35px; }
+        .lrc-line.active { color: #fff; font-size: 22px; font-weight: 700; text-shadow: 0 0 15px var(--primary); transform: scale(1.05); }
+
+        /* 进度条 */
+        .progress-area { width: 100%; cursor: pointer; padding: 10px 0; }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; position: relative; }
+        .prog-fill::after {
+            content: ''; position: absolute; right: -7px; top: 50%; transform: translateY(-50%) scale(0);
+            width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 0 10px var(--primary);
+        }
+        .progress-area:hover .prog-fill::after { transform: translateY(-50%) scale(1); }
+
+        /* 按钮与控制 */
+        .btn-group-main { display: flex; justify-content: center; align-items: center; gap: 20px; }
+        .btn-ctrl {
+            width: 54px; height: 54px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05); color: #fff; font-size: 18px; cursor: pointer; transition: 0.3s;
+        }
+        .btn-play { width: 72px; height: 72px; font-size: 28px; background: var(--primary); color: #000; border: none; animation: glowPulse 3s infinite; }
+        .btn-play:hover { transform: scale(1.1); }
+
+        /* 手柄 HUD */
+        .gamepad-hud {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+            background: rgba(0,0,0,0.25); padding: 12px; border-radius: 16px; margin-top: auto;
+        }
+        .hud-item { display: flex; flex-direction: column; align-items: center; font-size: 10px; color: var(--text-sub); }
+        .hud-val { font-weight: bold; color: var(--primary); font-size: 14px; margin: 2px 0; }
+        .hud-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+        .hud-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.1s; }
+
+        /* 模态框 (列表/设置) */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(15px);
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; pointer-events: none; transition: 0.4s; z-index: 1000;
+        }
+        .modal-overlay.open { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: rgba(25, 30, 50, 0.9); border: 1px solid rgba(255,255,255,0.1);
+            width: 450px; border-radius: 24px; padding: 25px; transform: scale(0.9); transition: 0.4s;
+        }
+        .modal-overlay.open .modal-content { transform: scale(1); }
+        .pl-item {
+            padding: 12px; margin-bottom: 8px; background: rgba(255,255,255,0.03); 
+            border-radius: 10px; cursor: pointer; display: flex; justify-content: space-between;
+        }
+        .pl-item.active { background: rgba(154, 200, 226, 0.2); border-left: 4px solid var(--primary); }
+
+        .footer { padding: 15px 30px; background: rgba(0,0,0,0.2); font-size: 12px; color: var(--text-sub); display: flex; justify-content: space-between; }
+        
+        .toast {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(100px);
+            background: var(--primary); color: #000; padding: 12px 24px; border-radius: 30px;
+            font-weight: bold; transition: 0.4s; opacity: 0; z-index: 2000;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+        input[type="file"] { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="bg-layer-img"></div>
+    <div id="bg-layer-color"></div>
+
+    <div class="player-wrapper">
+        <div class="header">
+            <div class="brand">🎮 MBolka Player Pro</div>
+            <div class="nav-actions">
+                <button class="btn-glass" id="btnShowList"><i>📃</i> 列表</button>
+                <button class="btn-glass" id="btnToggleLrc"><i>📝</i> 歌词</button>
+                <button class="btn-glass" id="btnSettings"><i>⚙️</i> 设置</button>
+                <button class="btn-glass" id="btnLoadFolder" style="background: var(--primary); color:#000;"><i>📁</i> 载入目录</button>
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <!-- 专辑列 -->
+            <div class="col col-album">
+                <div class="art-box">
+                    <img id="albumArt" class="art-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgwIiBoZWlnaHQ9IjI4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                </div>
+                <div>
+                    <div class="track-title" id="songTitle">等待载入...</div>
+                    <div class="track-artist" id="songArtist">请连接手柄或选择文件夹</div>
+                </div>
+            </div>
+
+            <!-- 控制列 -->
+            <div class="col col-controls">
+                <div class="visual-area">
+                    <canvas class="vis-canvas" id="spectrumCanvas"></canvas>
+                </div>
+                
+                <div>
+                    <div class="progress-area" id="progArea">
+                        <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-sub);">
+                        <span id="timeCur">0:00</span><span id="timeTot">0:00</span>
+                    </div>
+                </div>
+
+                <div class="btn-group-main">
+                    <button class="btn-ctrl" id="btnPrev">⏮</button>
+                    <button class="btn-ctrl btn-play" id="btnPlay">▶</button>
+                    <button class="btn-ctrl" id="btnNext">⏭</button>
+                </div>
+
+                <div class="gamepad-hud" id="gamepadHUD">
+                    <div class="hud-item"><span>左摇杆 X</span><div class="hud-val" id="valLX">0.0</div><div class="hud-bar"><div class="hud-fill" id="barLX"></div></div></div>
+                    <div class="hud-item"><span>左摇杆 Y</span><div class="hud-val" id="valLY">0.0</div><div class="hud-bar"><div class="hud-fill" id="barLY"></div></div></div>
+                    <div class="hud-item"><span>LT 深度</span><div class="hud-val" id="valLT">0.0</div><div class="hud-bar"><div class="hud-fill" id="barLT"></div></div></div>
+                    <div class="hud-item"><span>RT 深度</span><div class="hud-val" id="valRT">0.0</div><div class="hud-bar"><div class="hud-fill" id="barRT"></div></div></div>
+                </div>
+            </div>
+
+            <!-- 歌词列 -->
+            <div class="col col-lyrics" id="lrcPanel">
+                <div class="lrc-viewport" id="lrcViewport">
+                    <div class="lrc-line">尚未载入歌词</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div id="fileInfo">就绪 | 建议连接 Xbox/PS 手柄控制</div>
+            <div id="gamepadStatus">⌨️ 键盘模式</div>
+        </div>
+    </div>
+
+    <!-- 播放列表 -->
+    <div class="modal-overlay" id="listModal">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 20px;">播放列表</h3>
+            <div id="playlistItems" style="max-height: 50vh; overflow-y: auto;">
+                <div style="text-align: center; color: var(--text-sub);">空空如也</div>
+            </div>
+            <button class="btn-glass" style="width: 100%; margin-top: 20px; justify-content: center;" onclick="closeModals()">关闭</button>
+        </div>
+    </div>
+
+    <!-- 提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        /** === 核心变量 === */
+        const audio = new Audio(); audio.crossOrigin = "anonymous";
+        let audioCtx, analyser, dataArray, spectrumCtx;
+        let playlist = [], lrcMap = new Map();
+        let currentIndex = -1, isShuffle = false, isPlaying = false;
+        let parsedLyrics = [];
+        let gamepadConnected = false, prevButtons = [];
+        let currentHue = 200; // 默认主题色调
+
+        const el = {
+            title: document.getElementById('songTitle'), artist: document.getElementById('songArtist'),
+            art: document.getElementById('albumArt'), bgImg: document.getElementById('bg-layer-img'),
+            lrcView: document.getElementById('lrcViewport'), lrcPanel: document.getElementById('lrcPanel'),
+            progFill: document.getElementById('progFill'), timeCur: document.getElementById('timeCur'), timeTot: document.getElementById('timeTot'),
+            folder: document.getElementById('folderInput'), toast: document.getElementById('toast'),
+            plContainer: document.getElementById('playlistItems'), padStatus: document.getElementById('gamepadStatus')
+        };
+
+        /** === 通用工具 === */
+        const showToast = (msg) => { el.toast.innerText = msg; el.toast.classList.add('show'); setTimeout(()=>el.toast.classList.remove('show'), 2000); };
+        const formatTime = (s) => { if(!s) return '0:00'; const m=Math.floor(s/60), sec=Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; };
+
+        /** === 歌词 & 媒体解析 === */
+        const parseMetadata = (file) => {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(file);
+                const meta = { title: file.name.replace(/\.[^/.]+$/, ""), artist: "未知歌手", url, file };
+                if (window.jsmediatags) {
+                    jsmediatags.read(file, {
+                        onSuccess: tag => {
+                            if(tag.tags.title) meta.title = tag.tags.title;
+                            if(tag.tags.artist) meta.artist = tag.tags.artist;
+                            if(tag.tags.picture) {
+                                let b64 = ''; const d = tag.tags.picture.data;
+                                for(let i=0; i<d.length; i++) b64 += String.fromCharCode(d[i]);
+                                meta.art = `data:${tag.tags.picture.format};base64,${window.btoa(b64)}`;
+                            } resolve(meta);
+                        }, onError: () => resolve(meta)
+                    });
+                } else resolve(meta);
+            });
+        };
+
+        const loadLyrics = async (song) => {
+            parsedLyrics = []; el.lrcView.innerHTML = '';
+            const baseName = song.file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+            let lrcFile = lrcMap.get(baseName);
+            if(!lrcFile) {
+                for(let [k, v] of lrcMap) if(baseName.includes(k) || k.includes(baseName)) { lrcFile = v; break; }
+            }
+            if(!lrcFile) return;
+
+            const text = await new Promise(res => {
+                const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsText(lrcFile, 'utf-8');
+            });
+
+            text.split('\n').forEach(line => {
+                const timeMatch = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/);
+                if(timeMatch) {
+                    const time = parseInt(timeMatch[1])*60 + parseInt(timeMatch[2]) + parseInt(timeMatch[3])/1000;
+                    parsedLyrics.push({ time, text: line.replace(/\[.*?\]/g, '').trim() });
+                }
+            });
+            parsedLyrics.sort((a,b)=>a.time - b.time);
+            parsedLyrics.forEach(l => {
+                const div = document.createElement('div'); div.className = 'lrc-line'; div.innerText = l.text;
+                el.lrcView.appendChild(div);
+            });
+        };
+
+        const syncLyrics = () => {
+            if(!parsedLyrics.length) return;
+            const cur = audio.currentTime;
+            let activeIdx = -1;
+            for(let i=0; i<parsedLyrics.length; i++) {
+                if(cur >= parsedLyrics[i].time - 0.3) activeIdx = i; else break;
+            }
+            const lines = el.lrcView.querySelectorAll('.lrc-line');
+            lines.forEach((l, i) => {
+                if(i === activeIdx) {
+                    if(!l.classList.contains('active')) {
+                        l.classList.add('active');
+                        el.lrcView.scrollTo({ top: l.offsetTop - el.lrcView.clientHeight/2, behavior: 'smooth' });
+                    }
+                } else l.classList.remove('active');
+            });
+        };
+
+        /** === 播放核心 === */
+        const playAudio = async (index) => {
+            if(!playlist[index]) return;
+            currentIndex = index;
+            const song = playlist[index];
+            audio.src = song.url;
+            el.title.innerText = song.title;
+            el.artist.innerText = song.artist;
+            
+            if(song.art) {
+                el.art.src = song.art;
+                el.bgImg.style.backgroundImage = `url(${song.art})`;
+                el.bgImg.classList.add('active');
+            } else {
+                el.art.src = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgwIiBoZWlnaHQ9IjI4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+";
+                el.bgImg.classList.remove('active');
+            }
+
+            loadLyrics(song);
+            renderPlaylist();
+            updateMediaSession(song);
+            
+            try { await audio.play(); isPlaying = true; document.getElementById('btnPlay').innerText = '⏸'; if(!audioCtx) initAudioCtx(); } catch(e) {}
+        };
+
+        const togglePlay = () => {
+            if(!playlist.length) return document.getElementById('btnLoadFolder').click();
+            if(audio.paused) { audio.play(); isPlaying=true; document.getElementById('btnPlay').innerText = '⏸'; }
+            else { audio.pause(); isPlaying=false; document.getElementById('btnPlay').innerText = '▶'; }
+        };
+
+        const goNext = () => { let i = isShuffle ? Math.floor(Math.random()*playlist.length) : (currentIndex+1)%playlist.length; playAudio(i); };
+        const goPrev = () => { let i = (currentIndex - 1 + playlist.length) % playlist.length; playAudio(i); };
+
+        /** === 可视化系统 === */
+        const initAudioCtx = () => {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            const source = audioCtx.createMediaElementSource(audio);
+            source.connect(analyser); analyser.connect(audioCtx.destination);
+            analyser.fftSize = 256;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            spectrumCtx = document.getElementById('spectrumCanvas').getContext('2d');
+            drawVis();
+        };
+
+        const drawVis = () => {
+            requestAnimationFrame(drawVis);
+            if(!analyser) return;
+            const cvs = document.getElementById('spectrumCanvas');
+            cvs.width = cvs.offsetWidth; cvs.height = cvs.offsetHeight;
+            analyser.getByteFrequencyData(dataArray);
+            spectrumCtx.clearRect(0,0,cvs.width,cvs.height);
+
+            const barWidth = (cvs.width / dataArray.length) * 2.5;
+            let x = 0;
+            for(let i=0; i<dataArray.length; i++) {
+                const h = (dataArray[i]/255) * cvs.height;
+                spectrumCtx.fillStyle = `hsla(${currentHue}, 70%, 70%, 0.8)`;
+                spectrumCtx.fillRect(x, cvs.height - h, barWidth-2, h);
+                x += barWidth;
+            }
+        };
+
+        /** === UI 交互 === */
+        function renderPlaylist() {
+            el.plContainer.innerHTML = '';
+            playlist.forEach((s, i) => {
+                const d = document.createElement('div');
+                d.className = `pl-item ${i === currentIndex ? 'active' : ''}`;
+                d.innerHTML = `<span>${s.title}</span><small>${s.artist}</small>`;
+                d.onclick = () => { playAudio(i); closeModals(); };
+                el.plContainer.appendChild(d);
+            });
+        }
+
+        const closeModals = () => document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.remove('open'));
+        document.getElementById('btnShowList').onclick = () => { renderPlaylist(); document.getElementById('listModal').classList.add('open'); };
+        document.getElementById('btnToggleLrc').onclick = () => { 
+            const isVisible = el.lrcPanel.style.display === 'flex';
+            el.lrcPanel.style.display = isVisible ? 'none' : 'flex';
+            document.getElementById('btnToggleLrc').classList.toggle('active', !isVisible);
+        };
+        document.getElementById('btnPlay').onclick = togglePlay;
+        document.getElementById('btnNext').onclick = goNext;
+        document.getElementById('btnPrev').onclick = goPrev;
+
+        /** === 文件载入 (优化版) === */
+        el.folder.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            playlist = []; lrcMap.clear();
+            const audioFiles = files.filter(f => /\.(mp3|flac|wav|m4a)$/i.test(f.name));
+            files.filter(f => f.name.endsWith('.lrc')).forEach(f => lrcMap.set(f.name.replace('.lrc','').toLowerCase(), f));
+
+            if(!audioFiles.length) return showToast("❌ 未找到音频文件");
+            showToast(`⚙️ 正在解析 ${audioFiles.length} 首音乐...`);
+            
+            // 首批解析
+            for(let i=0; i<Math.min(10, audioFiles.length); i++) {
+                playlist.push(await parseMetadata(audioFiles[i]));
+            }
+            playAudio(0);
+
+            // 后台解析剩余部分
+            if(audioFiles.length > 10) {
+                (async () => {
+                    for(let i=10; i<audioFiles.length; i++) {
+                        playlist.push(await parseMetadata(audioFiles[i]));
+                        if(i % 20 === 0) renderPlaylist();
+                    }
+                    showToast("✅ 全部加载完成");
+                })();
+            }
+        };
+
+        /** === 手柄控制增强 === */
+        window.addEventListener("gamepadconnected", (e) => {
+            gamepadConnected = true;
+            el.padStatus.innerHTML = `🎮 ${e.gamepad.id.substring(0,15)}...`;
+            el.padStatus.style.color = 'var(--primary)';
+        });
+
+        const pollGamepad = () => {
+            const gp = navigator.getGamepads()[0];
+            if(gp && gamepadConnected) {
+                // HUD 更新
+                const lx = gp.axes[0], ly = gp.axes[1];
+                const lt = gp.buttons[6].value, rt = gp.buttons[7].value;
+                document.getElementById('valLX').innerText = lx.toFixed(1);
+                document.getElementById('barLX').style.width = `${(lx+1)*50}%`;
+                document.getElementById('valLY').innerText = ly.toFixed(1);
+                document.getElementById('barLY').style.width = `${(ly+1)*50}%`;
+                document.getElementById('valLT').innerText = lt.toFixed(1);
+                document.getElementById('barLT').style.width = `${lt*100}%`;
+                document.getElementById('valRT').innerText = rt.toFixed(1);
+                document.getElementById('barRT').style.width = `${rt*100}%`;
+
+                // 交互映射
+                const b = gp.buttons.map(x => x.pressed);
+                if(b[0] && !prevButtons[0]) togglePlay(); // A: 播放
+                if(b[4] && !prevButtons[4]) goPrev(); // LB: 上一首
+                if(b[5] && !prevButtons[5]) goNext(); // RB: 下一首
+                if(b[1] && !prevButtons[1]) closeModals(); // B: 关闭模态框
+                if(b[2] && !prevButtons[2]) document.getElementById('btnShowList').click(); // X: 列表
+                if(b[3] && !prevButtons[3]) document.getElementById('btnToggleLrc').click(); // Y: 歌词
+                
+                // 根据摇杆改变可视化色调
+                if(Math.abs(lx) > 0.1) currentHue = (currentHue + lx * 5) % 360;
+
+                prevButtons = b;
+            }
+            requestAnimationFrame(pollGamepad);
+        };
+        requestAnimationFrame(pollGamepad);
+
+        /** === 媒体会话控制 === */
+        const updateMediaSession = (s) => {
+            if('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: s.title, artist: s.artist,
+                    artwork: s.art ? [{src: s.art, sizes:'512x512', type:'image/jpeg'}] : []
+                });
+                navigator.mediaSession.setActionHandler('play', togglePlay);
+                navigator.mediaSession.setActionHandler('pause', togglePlay);
+                navigator.mediaSession.setActionHandler('nexttrack', goNext);
+                navigator.mediaSession.setActionHandler('previoustrack', goPrev);
+            }
+        };
+
+        audio.ontimeupdate = () => {
+            const per = (audio.currentTime / audio.duration) * 100;
+            el.progFill.style.width = per + '%';
+            el.timeCur.innerText = formatTime(audio.currentTime);
+            el.timeTot.innerText = formatTime(audio.duration);
+            syncLyrics();
+        };
+        audio.onended = goNext;
+
+        document.getElementById('btnLoadFolder').onclick = () => el.folder.click();
+    </script>
+</body>
+</html>

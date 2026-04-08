@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka Player - Modern</title>
+    <!-- jsmediatags: 提取音频元数据 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        /* 现代重置与基础变量 */
+        :root {
+            --primary: #9ac8e2;
+            --bg-color: #1a1a2e;
+            --text-main: #f0f8ff;
+            --text-sub: #94a3b8;
+            --glass-bg: rgba(20, 25, 40, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+            --bg-blur: 40px; /* 动态模糊度 */
+            --transition-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --transition-smooth: cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-main);
+            background-color: var(--bg-color);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden; /* 防止整个页面滚动 */
+        }
+
+        /* 现代滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        /* === 动态背景层 === */
+        #bg-image-layer, #bg-color-layer {
+            position: fixed;
+            top: -10%; left: -10%; right: -10%; bottom: -10%;
+            z-index: -2;
+            opacity: 0;
+            transition: opacity 1.5s var(--transition-smooth), background 1.5s var(--transition-smooth);
+        }
+
+        #bg-image-layer {
+            background-size: cover;
+            background-position: center;
+            filter: blur(var(--bg-blur)) brightness(0.55) saturate(1.3);
+            transform: scale(1.1);
+        }
+
+        #bg-color-layer {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--bg-color) 100%);
+        }
+
+        #bg-image-layer.active, #bg-color-layer.active {
+            opacity: 1;
+        }
+
+        /* === 播放器主体 (Glassmorphism) === */
+        .player-core {
+            width: 95vw;
+            max-width: 1400px;
+            height: 90vh;
+            background: var(--glass-bg);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border-radius: 32px;
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--glass-shadow);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: appFadeIn 0.8s var(--transition-smooth);
+        }
+
+        @keyframes appFadeIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* === 顶部控制栏 === */
+        .header {
+            padding: 24px 32px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-main);
+        }
+        .logo i { color: var(--primary); transition: color 0.5s; }
+
+        .header-actions { display: flex; gap: 12px; }
+
+        .btn-glass {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+            padding: 10px 20px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s var(--transition-smooth);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-glass:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #000;
+            border: none;
+        }
+        .btn-primary:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        /* === 加载进度条 === */
+        .loading-bar-wrap {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+            display: none;
+        }
+        .loading-bar-wrap.active { display: block; }
+        .loading-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.2s, background 0.5s;
+        }
+
+        /* === 中部内容区 === */
+        .content-area {
+            display: flex;
+            flex: 1;
+            padding: 32px;
+            gap: 40px;
+            overflow: hidden;
+        }
+
+        /* 左侧：专辑与歌曲信息 */
+        .album-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .album-art-wrap {
+            width: 340px;
+            height: 340px;
+            border-radius: 32px;
+            overflow: hidden;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+            animation: float 8s ease-in-out infinite;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .album-art {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.6s var(--transition-smooth);
+        }
+        .album-art-wrap:hover .album-art { transform: scale(1.05); }
+
+        .song-info { text-align: center; margin-top: 30px; width: 100%; }
+        .song-title {
+            font-size: 32px; font-weight: 800; margin-bottom: 8px;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .song-artist { font-size: 18px; color: var(--text-sub); }
+
+        /* 中间：播放控制与频谱 */
+        .control-panel {
+            flex: 1.2;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 28px;
+        }
+
+        .spectrum-box {
+            width: 100%; height: 80px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        canvas { width: 100%; height: 100%; }
+
+        .progress-container { cursor: pointer; }
+        .progress-track {
+            height: 6px; background: rgba(255,255,255,0.1);
+            border-radius: 3px; position: relative;
+        }
+        .progress-fill {
+            height: 100%; width: 0%;
+            background: var(--primary);
+            border-radius: 3px;
+            position: relative;
+            transition: background 0.5s;
+        }
+        .progress-fill::after {
+            content: ''; position: absolute;
+            right: -6px; top: 50%; transform: translateY(-50%) scale(0);
+            width: 12px; height: 12px; background: #fff; border-radius: 50%;
+            transition: transform 0.2s var(--transition-spring);
+        }
+        .progress-container:hover .progress-fill::after { transform: translateY(-50%) scale(1); }
+        
+        .time-text { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sub); margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+        .playback-controls { display: flex; justify-content: center; align-items: center; gap: 24px; }
+        
+        .ctrl-btn {
+            width: 56px; height: 56px;
+            border-radius: 50%; border: none;
+            background: rgba(255,255,255,0.05); color: #fff;
+            font-size: 20px; cursor: pointer;
+            transition: all 0.3s var(--transition-spring);
+        }
+        .ctrl-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.1); color: var(--primary); }
+        
+        .play-btn {
+            width: 80px; height: 80px; font-size: 32px;
+            background: var(--primary); color: #000;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .play-btn:hover { transform: scale(1.1); filter: brightness(1.1); color: #000;}
+
+        .secondary-controls { display: flex; justify-content: space-between; align-items: center; }
+        .mode-btn { width: 44px; height: 44px; border-radius: 14px; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #fff; cursor: pointer; transition: 0.3s; }
+        .mode-btn.active { background: var(--primary); color: #000; border-color: var(--primary); }
+        
+        .volume-box { display: flex; align-items: center; gap: 12px; flex: 1; margin-left: 20px; background: rgba(0,0,0,0.2); padding: 10px 16px; border-radius: 16px; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: var(--primary); margin-top: -5px; cursor: pointer; transition: background 0.5s;}
+
+        /* 右侧：独立歌词区 */
+        .lyrics-panel {
+            flex: 1.2;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 24px;
+            padding: 24px 0;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(255,255,255,0.05);
+            /* 上下渐隐遮罩 */
+            mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+        }
+
+        .lyrics-scroll-box {
+            flex: 1;
+            overflow-y: auto;
+            padding: 50% 20px; /* 撑开上下空间便于滚动至居中 */
+            text-align: center;
+        }
+
+        .lyric-line {
+            font-size: 18px;
+            line-height: 2;
+            color: rgba(255, 255, 255, 0.4);
+            transition: all 0.4s var(--transition-spring);
+            transform-origin: center;
+            min-height: 36px;
+        }
+        .lyric-line.active {
+            color: #fff;
+            font-size: 26px;
+            font-weight: bold;
+            text-shadow: 0 0 20px var(--primary);
+            transform: scale(1.05);
+        }
+
+        /* === 设置面板 === */
+        .settings-drawer {
+            position: fixed; top: 0; right: -400px;
+            width: 400px; height: 100vh;
+            background: rgba(15, 20, 30, 0.85);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border-left: 1px solid var(--glass-border);
+            padding: 32px;
+            transition: right 0.4s var(--transition-spring);
+            z-index: 100;
+            display: flex; flex-direction: column; gap: 24px;
+            overflow-y: auto;
+        }
+        .settings-drawer.open { right: 0; }
+        .setting-item { background: rgba(255,255,255,0.03); padding: 16px; border-radius: 16px; }
+        .setting-title { font-size: 14px; color: var(--text-sub); margin-bottom: 12px; font-weight: bold;}
+        
+        .help-text { font-size: 13px; color: var(--text-sub); line-height: 1.6; }
+        .help-text kbd { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff; }
+
+        /* === 通知 Toast === */
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translate(-50%, 100px);
+            background: var(--text-main); color: #000;
+            padding: 12px 24px; border-radius: 30px; font-weight: 600;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            opacity: 0; transition: all 0.4s var(--transition-spring);
+            z-index: 1000;
+        }
+        .toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+        /* 隐藏原生 Input */
+        input[type="file"] { display: none; }
+
+        @media (max-width: 1024px) {
+            .content-area { flex-direction: column; overflow-y: auto; }
+            .lyrics-panel { min-height: 400px; mask-image: none; -webkit-mask-image: none;}
+            .player-core { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 背景层 -->
+    <div id="bg-image-layer"></div>
+    <div id="bg-color-layer"></div>
+
+    <!-- 播放器核心 -->
+    <div class="player-core">
+        <div class="header">
+            <div class="logo"><i id="logoIcon">♪</i> MBolka</div>
+            <div class="header-actions">
+                <button class="btn-glass" id="btnToggleLyrics"><i>📝</i> 歌词</button>
+                <button class="btn-glass" id="btnSettings"><i>⚙️</i> 设置</button>
+                <button class="btn-glass btn-primary" id="btnLoadFolder"><i>📁</i> 载入音乐</button>
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+            </div>
+        </div>
+
+        <div class="loading-bar-wrap" id="loadingWrap">
+            <div class="loading-bar" id="loadingBar"></div>
+        </div>
+
+        <div class="content-area">
+            <!-- 专辑信息区 -->
+            <div class="album-panel">
+                <div class="album-art-wrap">
+                    <img id="albumArt" class="album-art" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                </div>
+                <div class="song-info">
+                    <div class="song-title" id="songTitle">等待音乐载入</div>
+                    <div class="song-artist" id="songArtist">MBolka Player</div>
+                </div>
+            </div>
+
+            <!-- 控制区 -->
+            <div class="control-panel">
+                <div class="spectrum-box"><canvas id="spectrumCanvas"></canvas></div>
+
+                <div>
+                    <div class="progress-container" id="progressWrap">
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progressBar"></div>
+                        </div>
+                    </div>
+                    <div class="time-text">
+                        <span id="timeCurrent">0:00</span>
+                        <span id="timeTotal">0:00</span>
+                    </div>
+                </div>
+
+                <div class="playback-controls">
+                    <button class="ctrl-btn" id="btnPrev">⏮</button>
+                    <button class="ctrl-btn play-btn" id="btnPlay">▶</button>
+                    <button class="ctrl-btn" id="btnNext">⏭</button>
+                </div>
+
+                <div class="secondary-controls">
+                    <div style="display: flex; gap: 10px;">
+                        <button class="mode-btn active" id="btnModeSeq" title="顺序播放">⇄</button>
+                        <button class="mode-btn" id="btnModeRnd" title="随机播放">🔀</button>
+                    </div>
+                    <div class="volume-box">
+                        <span>🔊</span>
+                        <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.7">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 歌词区 -->
+            <div class="lyrics-panel" id="lyricsPanel">
+                <div class="lyrics-scroll-box" id="lyricsContainer">
+                    <!-- 歌词插入在此 -->
+                    <div class="lyric-line" style="opacity: 0.5;">请载入音乐文件夹</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置抽屉 -->
+    <div class="settings-drawer" id="settingsDrawer">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h2 style="font-size: 20px;">偏好设置</h2>
+            <button class="btn-glass" id="btnCloseSettings" style="padding: 6px 12px;">关闭</button>
+        </div>
+
+        <div class="setting-item">
+            <div class="setting-title">视觉与色彩 (UI 跟随变色)</div>
+            <button class="btn-glass" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 12px;">开启取色模式</button>
+            <div class="setting-title" style="margin-top: 15px;">自定义背景模糊度: <span id="blurValTxt">40px</span></div>
+            <input type="range" id="blurSlider" min="0" max="100" value="40">
+        </div>
+
+        <div class="setting-item">
+            <div class="setting-title">自定义背景</div>
+            <button class="btn-glass" id="btnUploadBg" style="width: 100%; justify-content: center; margin-bottom: 10px;">上传本地背景图</button>
+            <button class="btn-glass" id="btnClearBg" style="width: 100%; justify-content: center; color: #ff6b6b;">清除自定义背景</button>
+            <input type="file" id="bgInput" accept="image/*">
+        </div>
+
+        <div class="setting-item">
+            <div class="setting-title">快捷键指南</div>
+            <div class="help-text">
+                <p><kbd>空格</kbd> / <kbd>回车</kbd> : 播放 / 暂停</p>
+                <p><kbd>←</kbd> / <kbd>→</kbd> : 切换上一曲 / 下一曲</p>
+                <p><kbd>↑</kbd> / <kbd>↓</kbd> : 调节音量大小</p>
+                <p><kbd>S</kbd> : 顺序播放 | <kbd>R</kbd> : 随机播放</p>
+                <p><kbd>L</kbd> : 显隐歌词面板</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toastMsg">提示信息</div>
+
+    <script>
+        /**
+         * 核心状态与全局变量
+         */
+        const audio = new Audio();
+        audio.crossOrigin = "anonymous";
+        let audioCtx, analyser, source, dataArray, spectrumCtx;
+        
+        let playlist = [];
+        let lrcMap = new Map();
+        let currentIndex = -1;
+        let isPlaying = false;
+        let isShuffle = false;
+        let parsedLyrics = [];
+        let playHistory = [];
+
+        // 背景与主题状态 (严格按照要求4逻辑)
+        let cfg = {
+            colorMode: false,
+            customBgImg: null,
+            customBgColor: null, // 从自定义背景提取的颜色
+            blurAmt: 40,
+            defaultColor: '#9ac8e2'
+        };
+        let currentAlbumColor = null; 
+        let hasCurrentAlbumArt = false;
+
+        // DOM 元素引用
+        const el = {
+            folderInput: document.getElementById('folderInput'),
+            btnLoad: document.getElementById('btnLoadFolder'),
+            btnPlay: document.getElementById('btnPlay'),
+            btnPrev: document.getElementById('btnPrev'),
+            btnNext: document.getElementById('btnNext'),
+            progWrap: document.getElementById('progressWrap'),
+            progBar: document.getElementById('progressBar'),
+            timeCur: document.getElementById('timeCurrent'),
+            timeTot: document.getElementById('timeTotal'),
+            volSlider: document.getElementById('volumeSlider'),
+            title: document.getElementById('songTitle'),
+            artist: document.getElementById('songArtist'),
+            albumArt: document.getElementById('albumArt'),
+            lrcContainer: document.getElementById('lyricsContainer'),
+            lyricsPanel: document.getElementById('lyricsPanel'),
+            btnToggleLrc: document.getElementById('btnToggleLyrics'),
+            bgImgLayer: document.getElementById('bg-image-layer'),
+            bgColorLayer: document.getElementById('bg-color-layer'),
+            toast: document.getElementById('toastMsg'),
+            loadBar: document.getElementById('loadingBar'),
+            loadWrap: document.getElementById('loadingWrap')
+        };
+
+        /**
+         * 基础工具：Toast提示, 编解码, 颜色提取
+         */
+        const showToast = (msg) => {
+            el.toast.textContent = msg;
+            el.toast.classList.add('show');
+            setTimeout(() => el.toast.classList.remove('show'), 2500);
+        };
+
+        const formatTime = (sec) => {
+            if (!sec || isNaN(sec)) return '0:00';
+            const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        };
+
+        // 终极解码器：处理 HTML Entities 和 Unicode \uXXXX
+        const decodeText = (str) => {
+            if (!str) return '';
+            let s = str.replace(/\\u([0-9a-fA-F]{4})/g, (m, g) => String.fromCharCode(parseInt(g, 16)));
+            const txt = document.createElement("textarea");
+            txt.innerHTML = s;
+            return txt.value;
+        };
+
+        // 快速 Canvas 取色 (降采样提升性能)
+        const extractColor = (imgSrc) => {
+            return new Promise((resolve) => {
+                if (!imgSrc || imgSrc.startsWith('data:image/svg')) return resolve(null);
+                const img = new Image();
+                img.onload = () => {
+                    const cvs = document.createElement('canvas');
+                    cvs.width = 32; cvs.height = 32;
+                    const ctx = cvs.getContext('2d', { willReadFrequently: true });
+                    ctx.drawImage(img, 0, 0, 32, 32);
+                    try {
+                        const data = ctx.getImageData(0, 0, 32, 32).data;
+                        let r=0, g=0, b=0, count=0;
+                        for(let i=0; i<data.length; i+=16) {
+                            if(data[i]>20 && data[i]<235) { // 剔除极黑极白
+                                r+=data[i]; g+=data[i+1]; b+=data[i+2]; count++;
+                            }
+                        }
+                        resolve(count > 0 ? `rgb(${~~(r/count)},${~~(g/count)},${~~(b/count)})` : null);
+                    } catch(e) { resolve(null); }
+                };
+                img.onerror = () => resolve(null);
+                img.src = imgSrc;
+            });
+        };
+
+        /**
+         * 核心逻辑：背景显示优先级决策机 (严格遵循需求4)
+         */
+        const applyThemeLogic = () => {
+            let targetColor = cfg.defaultColor;
+            let showImg = false;
+            let showColor = false;
+            let bgUrl = '';
+
+            document.documentElement.style.setProperty('--bg-blur', `${cfg.blurAmt}px`);
+
+            if (cfg.colorMode) {
+                // 取色模式开启
+                showColor = true;
+                if (cfg.customBgImg) targetColor = cfg.customBgColor || targetColor;
+                else targetColor = currentAlbumColor || targetColor;
+            } else {
+                // 取色模式关闭
+                if (cfg.customBgImg) {
+                    showImg = true;
+                    // 有专辑封面时用专辑封面，无则用自定义背景
+                    bgUrl = hasCurrentAlbumArt ? el.albumArt.src : cfg.customBgImg;
+                } else {
+                    if (hasCurrentAlbumArt) {
+                        showImg = true;
+                        bgUrl = el.albumArt.src;
+                    } else {
+                        showColor = true;
+                        targetColor = cfg.defaultColor;
+                    }
+                }
+            }
+
+            // 更新 CSS 变量，让全局 UI 跟随变色
+            document.documentElement.style.setProperty('--primary', targetColor);
+            
+            // 应用视图层
+            if (showImg) {
+                el.bgImgLayer.style.backgroundImage = `url(${bgUrl})`;
+                el.bgImgLayer.classList.add('active');
+                el.bgColorLayer.classList.remove('active');
+            } else if (showColor) {
+                el.bgColorLayer.style.background = `linear-gradient(135deg, ${targetColor} 0%, var(--bg-color) 100%)`;
+                el.bgColorLayer.classList.add('active');
+                el.bgImgLayer.classList.remove('active');
+            }
+        };
+
+        /**
+         * 智能文件读取：提取元数据 (利用 jsmediatags)
+         */
+        const parseMetadata = (file) => {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(file);
+                const meta = { title: file.name.replace(/\.[^/.]+$/, ""), artist: "未知", url, file };
+                
+                if (window.jsmediatags) {
+                    jsmediatags.read(file, {
+                        onSuccess: tag => {
+                            if(tag.tags.title) meta.title = decodeText(tag.tags.title);
+                            if(tag.tags.artist) meta.artist = decodeText(tag.tags.artist);
+                            if(tag.tags.picture) {
+                                let b64 = '';
+                                const d = tag.tags.picture.data;
+                                for(let i=0; i<d.length; i++) b64 += String.fromCharCode(d[i]);
+                                meta.art = `data:${tag.tags.picture.format};base64,${window.btoa(b64)}`;
+                            }
+                            resolve(meta);
+                        },
+                        onError: () => resolve(meta)
+                    });
+                } else resolve(meta);
+            });
+        };
+
+        /**
+         * 极速加载逻辑：首批20首立刻可用，其余异步
+         */
+        el.folderInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+            
+            playlist = []; lrcMap.clear();
+            const audios = [];
+            
+            files.forEach(f => {
+                const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+                if (['.mp3','.flac','.wav','.m4a'].includes(ext)) audios.push(f);
+                else if (ext === '.lrc') lrcMap.set(f.name.replace('.lrc','').toLowerCase(), f);
+            });
+
+            if (!audios.length) return showToast("未找到音频文件");
+            
+            el.loadWrap.classList.add('active');
+            const initLen = Math.min(20, audios.length);
+            
+            // 阻断式加载前20首
+            for(let i=0; i<initLen; i++) {
+                playlist.push(await parseMetadata(audios[i]));
+                el.loadBar.style.width = `${((i+1)/audios.length)*100}%`;
+            }
+
+            // 首次加载完成，按照要求随机播放一首
+            showToast(`极速载入前 ${initLen} 首，开始播放`);
+            isShuffle = true; 
+            document.getElementById('btnModeRnd').classList.add('active');
+            document.getElementById('btnModeSeq').classList.remove('active');
+            
+            const randIdx = Math.floor(Math.random() * playlist.length);
+            await playAudio(randIdx);
+
+            // 异步加载剩余文件 (不卡UI)
+            if (audios.length > initLen) {
+                let currentProc = initLen;
+                const parseChunk = async () => {
+                    const chunkEnd = Math.min(currentProc + 10, audios.length);
+                    for(let i = currentProc; i < chunkEnd; i++) {
+                        playlist.push(await parseMetadata(audios[i]));
+                    }
+                    currentProc = chunkEnd;
+                    el.loadBar.style.width = `${(currentProc/audios.length)*100}%`;
+                    
+                    if (currentProc < audios.length) {
+                        requestAnimationFrame(parseChunk); // 使用动画帧空闲调度
+                    } else {
+                        setTimeout(()=> el.loadWrap.classList.remove('active'), 1000);
+                        showToast(`全部 ${audios.length} 首载入完毕！`);
+                    }
+                };
+                requestAnimationFrame(parseChunk);
+            } else {
+                setTimeout(()=> el.loadWrap.classList.remove('active'), 500);
+            }
+        });
+
+        /**
+         * 全能歌词解析器：智能编码探测与防页面滚动劫持
+         */
+        const loadLrc = async (song) => {
+            parsedLyrics = [];
+            el.lrcContainer.innerHTML = '';
+            
+            const baseName = song.file.name.replace(/\.[^/.]+$/, "").toLowerCase();
+            let lrcFile = lrcMap.get(baseName);
+            // 模糊匹配兜底
+            if(!lrcFile) {
+                for (let [k, v] of lrcMap.entries()) {
+                    if (k.includes(baseName) || baseName.includes(k)) { lrcFile = v; break; }
+                }
+            }
+
+            if (!lrcFile) {
+                el.lrcContainer.innerHTML = '<div class="lyric-line" style="opacity:0.5;">纯音乐，请欣赏</div>';
+                return;
+            }
+
+            // 智能读取文本 (优先UTF-8，失败降级GBK)
+            const text = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    try { resolve(new TextDecoder('utf-8', {fatal: true}).decode(e.target.result)); }
+                    catch {
+                        const r2 = new FileReader();
+                        r2.onload = ev => resolve(ev.target.result);
+                        r2.readAsText(lrcFile, 'gbk');
+                    }
+                };
+                reader.readAsArrayBuffer(lrcFile);
+            });
+
+            // 解析正则
+            text.split(/\r?\n/).forEach(line => {
+                const times = line.match(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g);
+                if (times) {
+                    const txt = decodeText(line.replace(/\[.*?\]/g, '').trim());
+                    if (txt) {
+                        times.forEach(t => {
+                            const match = t.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/);
+                            if (match) {
+                                const ms = match[3] ? parseInt(match[3].padEnd(3,'0')) : 0;
+                                parsedLyrics.push({
+                                    time: parseInt(match[1])*60 + parseInt(match[2]) + ms/1000,
+                                    text: txt
+                                });
+                            }
+                        });
+                    }
+                }
+            });
+            parsedLyrics.sort((a,b) => a.time - b.time);
+
+            if(parsedLyrics.length) {
+                parsedLyrics.forEach((l, i) => {
+                    const d = document.createElement('div');
+                    d.className = 'lyric-line'; d.id = `lrc-${i}`; d.textContent = l.text;
+                    el.lrcContainer.appendChild(d);
+                });
+            } else {
+                el.lrcContainer.innerHTML = '<div class="lyric-line">暂无滚动歌词</div>';
+            }
+        };
+
+        // 核心滚动逻辑：使用 scrollTo 彻底解决页面弹跳问题
+        const syncLyrics = () => {
+            if(!parsedLyrics.length) return;
+            const curTime = audio.currentTime;
+            let activeIdx = -1;
+            for (let i = 0; i < parsedLyrics.length; i++) {
+                if (curTime >= parsedLyrics[i].time - 0.2) activeIdx = i; // 提前0.2秒响应更顺滑
+                else break;
+            }
+
+            const lines = el.lrcContainer.querySelectorAll('.lyric-line');
+            lines.forEach((line, i) => {
+                if (i === activeIdx) {
+                    if (!line.classList.contains('active')) {
+                        line.classList.add('active');
+                        // 局部容器平滑滚动，绝不劫持 Body
+                        const offset = line.offsetTop - el.lrcContainer.offsetTop - (el.lrcContainer.clientHeight / 2) + (line.clientHeight / 2);
+                        el.lrcContainer.scrollTo({ top: offset, behavior: 'smooth' });
+                    }
+                } else {
+                    line.classList.remove('active');
+                }
+            });
+        };
+
+        /**
+         * 音频播放与控制
+         */
+        const playAudio = async (idx) => {
+            if (!playlist[idx]) return;
+            
+            if (currentIndex !== idx) {
+                playHistory.push(idx);
+                currentIndex = idx;
+            }
+            
+            const song = playlist[idx];
+            audio.src = song.url;
+            el.title.textContent = song.title;
+            el.artist.textContent = song.artist;
+            
+            hasCurrentAlbumArt = !!song.art;
+            if (hasCurrentAlbumArt) {
+                el.albumArt.src = song.art;
+                currentAlbumColor = await extractColor(song.art);
+            } else {
+                el.albumArt.src = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+";
+                currentAlbumColor = null;
+            }
+            
+            applyThemeLogic(); // 触发主题状态机
+            await loadLrc(song);
+
+            try {
+                await audio.play();
+                isPlaying = true;
+                el.btnPlay.textContent = '⏸';
+                if(!audioCtx) initVisualizer();
+            } catch(e) { showToast("播放遇到问题，请重试"); }
+        };
+
+        const togglePlay = () => {
+            if (!playlist.length) return el.btnLoad.click();
+            if (isPlaying) { audio.pause(); isPlaying=false; el.btnPlay.textContent='▶'; }
+            else { audio.play(); isPlaying=true; el.btnPlay.textContent='⏸'; if(!audioCtx) initVisualizer(); }
+        };
+
+        const goNext = () => {
+            if(!playlist.length) return;
+            let n = isShuffle ? Math.floor(Math.random()*playlist.length) : (currentIndex + 1) % playlist.length;
+            playAudio(n);
+        };
+        
+        const goPrev = () => {
+            if(!playlist.length) return;
+            let p;
+            if(isShuffle) {
+                playHistory.pop(); // 弹出当前
+                p = playHistory.length ? playHistory.pop() : Math.floor(Math.random()*playlist.length);
+            } else {
+                p = (currentIndex - 1 + playlist.length) % playlist.length;
+            }
+            playAudio(p);
+        };
+
+        // 绑定播放事件
+        el.btnPlay.onclick = togglePlay;
+        el.btnNext.onclick = goNext;
+        el.btnPrev.onclick = goPrev;
+        audio.onended = goNext;
+        
+        audio.ontimeupdate = () => {
+            if (audio.duration) {
+                el.progBar.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
+                el.timeCur.textContent = formatTime(audio.currentTime);
+                syncLyrics();
+            }
+        };
+        audio.onloadedmetadata = () => el.timeTot.textContent = formatTime(audio.duration);
+
+        // 进度与音量拖拽
+        el.progWrap.onclick = (e) => {
+            if (audio.duration) {
+                const r = el.progWrap.getBoundingClientRect();
+                audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration;
+            }
+        };
+        el.volSlider.oninput = (e) => audio.volume = e.target.value;
+
+        /**
+         * 频谱可视化 (Canvas)
+         */
+        const initVisualizer = () => {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                source = audioCtx.createMediaElementSource(audio);
+                source.connect(analyser); analyser.connect(audioCtx.destination);
+                analyser.fftSize = 128;
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                spectrumCtx = document.getElementById('spectrumCanvas').getContext('2d');
+                drawVis();
+            } catch(e) { console.log('可视化初始化失败'); }
+        };
+        const drawVis = () => {
+            if(!spectrumCtx) return;
+            requestAnimationFrame(drawVis);
+            const cvs = document.getElementById('spectrumCanvas');
+            cvs.width = cvs.offsetWidth; cvs.height = cvs.offsetHeight;
+            analyser.getByteFrequencyData(dataArray);
+            spectrumCtx.clearRect(0,0, cvs.width, cvs.height);
+            const w = (cvs.width / bufferLength) * 2;
+            let x = 0;
+            for(let i=0; i<bufferLength; i++) {
+                const h = (dataArray[i]/255) * cvs.height;
+                spectrumCtx.fillStyle = 'rgba(255, 255, 255, 0.4)'; // 磨砂质感白
+                spectrumCtx.fillRect(x, cvs.height - h, w-1, h);
+                x += w;
+            }
+        };
+
+        /**
+         * UI 交互与设置面板
+         */
+        el.btnLoad.onclick = () => el.folderInput.click();
+        
+        // 歌词显隐 (现代 Grid 伸缩)
+        el.btnToggleLrc.onclick = () => {
+            if (el.lyricsPanel.style.display === 'none') {
+                el.lyricsPanel.style.display = 'flex';
+                el.btnToggleLrc.style.color = 'var(--primary)';
+            } else {
+                el.lyricsPanel.style.display = 'none';
+                el.btnToggleLrc.style.color = '';
+            }
+        };
+
+        // 播放模式
+        document.getElementById('btnModeSeq').onclick = function() {
+            isShuffle = false; this.classList.add('active'); document.getElementById('btnModeRnd').classList.remove('active');
+            showToast("切换为：顺序播放");
+        };
+        document.getElementById('btnModeRnd').onclick = function() {
+            isShuffle = true; this.classList.add('active'); document.getElementById('btnModeSeq').classList.remove('active');
+            showToast("切换为：随机播放");
+        };
+
+        // 设置抽屉
+        document.getElementById('btnSettings').onclick = () => document.getElementById('settingsDrawer').classList.add('open');
+        document.getElementById('btnCloseSettings').onclick = () => document.getElementById('settingsDrawer').classList.remove('open');
+
+        // 设置项：取色模式
+        document.getElementById('btnToggleColorMode').onclick = function() {
+            cfg.colorMode = !cfg.colorMode;
+            this.textContent = cfg.colorMode ? '关闭取色模式' : '开启取色模式';
+            this.style.color = cfg.colorMode ? 'var(--primary)' : '';
+            applyThemeLogic();
+            showToast(cfg.colorMode ? "取色模式已开启" : "取色模式已关闭");
+        };
+
+        // 设置项：模糊度
+        document.getElementById('blurSlider').oninput = function() {
+            cfg.blurAmt = this.value;
+            document.getElementById('blurValTxt').textContent = `${this.value}px`;
+            applyThemeLogic();
+        };
+
+        // 设置项：自定义背景
+        document.getElementById('btnUploadBg').onclick = () => document.getElementById('bgInput').click();
+        document.getElementById('bgInput').onchange = (e) => {
+            const f = e.target.files[0];
+            if(f) {
+                const r = new FileReader();
+                r.onload = async (ev) => {
+                    cfg.customBgImg = ev.target.result;
+                    cfg.customBgColor = await extractColor(cfg.customBgImg);
+                    applyThemeLogic();
+                    showToast("自定义背景应用成功");
+                };
+                r.readAsDataURL(f);
+            }
+        };
+        document.getElementById('btnClearBg').onclick = () => {
+            cfg.customBgImg = null; cfg.customBgColor = null;
+            applyThemeLogic();
+            showToast("自定义背景已清除");
+        };
+
+        /**
+         * 全局快捷键
+         */
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            switch(e.key.toLowerCase()) {
+                case ' ': case 'enter': e.preventDefault(); togglePlay(); break;
+                case 'arrowleft': e.preventDefault(); goPrev(); break;
+                case 'arrowright': e.preventDefault(); goNext(); break;
+                case 'arrowup': e.preventDefault(); audio.volume=Math.min(1, audio.volume+0.1); el.volSlider.value=audio.volume; break;
+                case 'arrowdown': e.preventDefault(); audio.volume=Math.max(0, audio.volume-0.1); el.volSlider.value=audio.volume; break;
+                case 's': document.getElementById('btnModeSeq').click(); break;
+                case 'r': document.getElementById('btnModeRnd').click(); break;
+                case 'l': el.btnToggleLrc.click(); break;
+            }
+        });
+
+        // 初始音量设置
+        audio.volume = 0.7;
+    </script>
+</body>
+</html>
