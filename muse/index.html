@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka Player - Ultimate Nexus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        /* ================= 核心变量与重置 ================= */
+        :root {
+            --primary: #9ac8e2;
+            --primary-light: #b4d6ea;
+            --primary-glow: rgba(154, 200, 226, 0.5);
+            --bg-dark: #0a0a1a;
+            --bg-dark-light: #1a1a2e;
+            --text-main: #f0f8ff;
+            --text-sub: #8a8aa0;
+            --glass-bg: rgba(26, 26, 46, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+            --bg-blur: 40px;
+            --curve-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --curve-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background: var(--bg-dark);
+            -webkit-font-smoothing: antialiased;
+            user-select: none;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        /* 全局焦点样式 (手柄/键盘导航) */
+        .gamepad-focus {
+            outline: 3px solid var(--primary) !important;
+            outline-offset: 4px !important;
+            box-shadow: 0 0 20px var(--primary-glow) !important;
+            transform: scale(1.02);
+            z-index: 50;
+        }
+
+        /* ================= 动态背景层 (共用) ================= */
+        #bg-layer-img, #bg-layer-color {
+            position: fixed; inset: -5%; z-index: -10; opacity: 0; pointer-events: none;
+            transition: opacity 1.2s var(--curve-smooth), filter 0.5s ease;
+        }
+        #bg-layer-img {
+            background-size: cover; background-position: center;
+            filter: blur(var(--bg-blur)) brightness(0.6) saturate(1.2);
+            transform: scale(1.05);
+        }
+        #bg-layer-color {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--bg-dark) 100%);
+            transition: background 1.2s var(--curve-smooth);
+        }
+        #bg-layer-img.active, #bg-layer-color.active { opacity: 1; }
+
+        /* ================= 视图容器切换 ================= */
+        .view-container {
+            position: absolute; inset: 0; width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            transition: opacity 0.6s var(--curve-smooth), transform 0.6s var(--curve-spring), filter 0.6s;
+        }
+        .view-container.hidden { opacity: 0; pointer-events: none; transform: scale(0.95); filter: blur(10px); }
+
+        /* ================= 1. 主界面样式 (Main View) ================= */
+        @keyframes appFadeIn { from { opacity: 0; transform: translateY(25px) scale(0.96); filter: blur(12px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
+        @keyframes floatArt { 0%, 100% { transform: translateY(0) rotate(0deg); } 25% { transform: translateY(-8px) rotate(1deg); box-shadow: 0 30px 50px rgba(0,0,0,0.4); } 75% { transform: translateY(6px) rotate(-1deg); box-shadow: 0 15px 30px rgba(0,0,0,0.3); } }
+        @keyframes shimmerBar { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+        @keyframes glowPulse { 0%, 100% { box-shadow: 0 0 15px rgba(0,0,0,0.3); } 50% { box-shadow: 0 0 35px var(--primary), 0 0 15px rgba(0,0,0,0.4); } }
+
+        .player-wrapper {
+            width: 96vw; max-width: 1400px; height: 92vh;
+            background: var(--glass-bg); backdrop-filter: blur(35px) saturate(180%); -webkit-backdrop-filter: blur(35px) saturate(180%);
+            border-radius: 32px; border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+            display: flex; flex-direction: column; animation: appFadeIn 1s var(--curve-spring) both; overflow: hidden;
+        }
+
+        .header { padding: 24px 36px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; background: rgba(10, 10, 26, 0.2); flex-shrink: 0; }
+        .brand { font-size: 24px; font-weight: 800; display: flex; gap: 10px; align-items: center; }
+        .brand i { color: var(--primary); transition: color 0.5s; }
+        .nav-actions { display: flex; gap: 14px; }
+        .btn-glass {
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main);
+            padding: 10px 20px; border-radius: 14px; cursor: pointer; font-weight: 500; font-size: 14px;
+            transition: all 0.3s var(--curve-smooth); display: flex; align-items: center; gap: 8px;
+        }
+        .btn-glass:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); border-color: var(--primary); }
+        .btn-glass.active { background: var(--primary); color: #000; border-color: var(--primary); }
+
+        .load-strip-container { height: 4px; background: rgba(255,255,255,0.05); width: 100%; display: none; position: relative; overflow: hidden; flex-shrink: 0;}
+        .load-strip-container.show { display: block; }
+        .load-strip { height: 100%; width: 0%; background: var(--primary); position: relative; transition: width 0.2s; }
+        .load-strip::after { content: ''; position: absolute; inset:0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmerBar 1.5s infinite; }
+
+        .content-grid { display: flex; flex: 1; padding: 32px 40px; gap: 40px; overflow: hidden; justify-content: center; }
+        .col { display: flex; flex-direction: column; transition: all 0.5s var(--curve-spring); }
+        
+        .col-album { flex: 0 1 380px; align-items: center; justify-content: center; gap: 30px; }
+        /* 无封面时的特殊样式：居中放大 */
+        .col-album.no-art .art-box { display: none; }
+        .col-album.no-art .track-info { display: flex; flex-direction: column; justify-content: center; height: 100%; transform: scale(1.2); }
+
+        .col-controls { flex: 0 1 480px; justify-content: center; gap: 32px; }
+        .col-lyrics {
+            flex: 0 1 450px; background: rgba(0,0,0,0.15); border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); position: relative;
+            mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+        }
+
+        .art-box { width: 340px; height: 340px; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); animation: floatArt 8s ease-in-out infinite; flex-shrink: 0; }
+        .art-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.8s var(--curve-smooth); }
+        .art-box:hover .art-img { transform: scale(1.06); }
+        .track-info { text-align: center; width: 100%; transition: all 0.5s var(--curve-spring);}
+        .track-title { font-size: 32px; font-weight: 800; margin-bottom: 8px; line-height: 1.2; text-shadow: 0 4px 12px rgba(0,0,0,0.3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+        .track-artist { font-size: 18px; color: var(--text-sub); font-weight: 500; }
+
+        .vis-canvas-container { width: 100%; height: 70px; background: rgba(0,0,0,0.2); border-radius: 16px; margin-bottom: -10px; cursor: pointer; transition: 0.3s; position: relative; overflow: hidden;}
+        .vis-canvas-container:hover { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);}
+        #spectrumCanvasMain { position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; }
+        .vis-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; opacity: 0; transition: 0.3s; text-shadow: 0 2px 5px #000; letter-spacing: 1px;}
+        .vis-canvas-container:hover .vis-hint { opacity: 1; }
+
+        .progress-area { width: 100%; cursor: pointer; padding: 10px 0; }
+        .prog-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; position: relative; }
+        .prog-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; position: relative; transition: background 0.5s; }
+        .prog-fill::after { content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%) scale(0); width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform 0.2s var(--curve-spring); box-shadow: 0 0 10px var(--primary); }
+        .progress-area:hover .prog-fill::after { transform: translateY(-50%) scale(1); }
+        .time-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-sub); margin-top: 8px; font-weight: 500; font-variant-numeric: tabular-nums;}
+
+        .btn-group-main { display: flex; justify-content: center; align-items: center; gap: 24px; }
+        .btn-ctrl { width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #fff; font-size: 20px; cursor: pointer; transition: all 0.3s var(--curve-spring); display: flex; justify-content: center; align-items: center; }
+        .btn-ctrl:hover { background: rgba(255,255,255,0.12); transform: scale(1.08); border-color: var(--primary); color: var(--primary); }
+        .btn-play { width: 84px; height: 84px; font-size: 32px; border: none; background: var(--primary); color: #000; animation: glowPulse 3s infinite; }
+        .btn-play:hover { transform: scale(1.08); filter: brightness(1.1); color: #000; }
+
+        .btn-group-sub { display: flex; justify-content: space-between; align-items: center; }
+        .btn-mode { width: 46px; height: 46px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #fff; cursor: pointer; transition: 0.3s; }
+        .btn-mode.active { background: var(--primary); color: #000; border-color: var(--primary); }
+        .vol-control { display: flex; align-items: center; gap: 12px; flex: 1; margin-left: 24px; background: rgba(0,0,0,0.2); padding: 12px 18px; border-radius: 16px; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: var(--primary); margin-top: -5px; cursor: pointer; transition: background 0.5s; box-shadow: 0 2px 5px rgba(0,0,0,0.5);}
+
+        .lrc-viewport { flex: 1; overflow-y: auto; text-align: center; padding: 50% 20px; scroll-behavior: smooth; }
+        .lrc-line { font-size: 18px; line-height: 2.2; color: rgba(255,255,255,0.35); transition: all 0.4s var(--curve-spring); min-height: 40px; cursor: pointer; }
+        .lrc-line:hover { color: rgba(255,255,255,0.8); }
+        .lrc-line.active { color: #fff; font-size: 26px; font-weight: 700; text-shadow: 0 0 20px rgba(154,200,226,0.6); transform: scale(1.05); }
+
+        .footer { padding: 16px 36px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: var(--text-sub); display: flex; justify-content: space-between; flex-shrink: 0; }
+
+        /* ================= 2. 沉浸界面样式 (Immersive View) ================= */
+        #immersive-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -5; }
+        
+        .imm-wrapper {
+            position: relative; z-index: 10; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: space-between;
+            padding: clamp(20px, 3vw, 40px); pointer-events: none;
+        }
+        .imm-wrapper * { pointer-events: auto; }
+
+        .imm-topbar { display: flex; justify-content: space-between; align-items: flex-start; }
+        
+        .imm-track-card {
+            display: flex; align-items: center; gap: 20px;
+            background: var(--glass-bg); backdrop-filter: blur(25px) saturate(180%); -webkit-backdrop-filter: blur(25px) saturate(180%);
+            padding: 15px 24px; border-radius: 24px; border: var(--glass-border); max-width: 500px;
+        }
+        .imm-track-card.no-art { gap: 0; }
+        .imm-track-card.no-art .imm-album-art { display: none; }
+        .imm-album-art { width: 70px; height: 70px; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+        .imm-album-art img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--curve-smooth); }
+        .imm-track-card:hover .imm-album-art img { transform: scale(1.1); }
+        
+        .imm-header-actions { display: flex; gap: 12px; }
+        .imm-icon-btn {
+            width: 50px; height: 50px; border-radius: 16px; background: rgba(255,255,255,0.06); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-main);
+            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s var(--curve-smooth); font-size: 18px;
+        }
+        .imm-icon-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); border-color: var(--primary); color: var(--primary); }
+
+        .imm-lyrics-center {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 90%; max-width: 1200px; text-align: center; z-index: 5; transition: opacity 0.5s; pointer-events: none;
+        }
+        .imm-lyrics-center.hidden { opacity: 0; }
+        .imm-subtitle { text-shadow: 0 4px 20px rgba(0,0,0,0.8), 0 0 30px var(--primary-glow); line-height: 1.4; }
+        .imm-subtitle-line { font-size: clamp(28px, 4vw, 46px); font-weight: 800; margin-bottom: 12px; min-height: 1.4em; transition: all 0.4s var(--curve-spring); }
+        .imm-subtitle-line.next { font-size: clamp(20px, 2.5vw, 28px); font-weight: 600; color: rgba(255,255,255,0.5); margin-top: 8px; min-height: 1.4em; }
+
+        .imm-bottom {
+            background: var(--glass-bg); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+            border-radius: 28px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            padding: 24px 40px; max-width: 850px; margin: 0 auto; width: 100%; display: flex; align-items: center; gap: 30px;
+        }
+        
+        /* ================= 3. 模态框与Toast组件 ================= */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+            display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 0.4s var(--curve-smooth); z-index: 100;
+        }
+        .modal-overlay.open { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: rgba(20,25,40,0.85); border: 1px solid rgba(255,255,255,0.1); border-radius: 28px;
+            padding: 32px; width: 480px; max-width: 90vw; max-height: 85vh; transform: scale(0.9); transition: transform 0.4s var(--curve-spring); display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.5); overflow-y: auto;
+        }
+        .modal-overlay.open .modal-content { transform: scale(1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        
+        .playlist-items { flex: 1; overflow-y: auto; padding-right: 10px; display: flex; flex-direction: column; gap: 8px;}
+        .pl-item { padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: 12px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
+        .pl-item:hover { background: rgba(255,255,255,0.08); }
+        .pl-item.active { background: rgba(154,200,226,0.15); border-color: var(--primary); color: var(--primary); font-weight: bold; }
+        .pl-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%;}
+        
+        .drawer-box { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px;}
+        .drawer-title { font-size: 15px; color: var(--text-sub); margin-bottom: 14px; font-weight: 600; }
+        .hotkey-grid { display: grid; grid-template-columns: auto 1fr; gap: 10px; font-size: 13px; color: var(--text-sub); line-height: 1.6; }
+        .hotkey-grid kbd { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff; font-family: monospace; border: 1px solid rgba(255,255,255,0.2);}
+        .hotkey-grid .pad { color: var(--primary); font-weight: bold; border-color: var(--primary); background: rgba(154,200,226,0.1);}
+
+        .toast {
+            position: fixed; top: 30px; left: 50%; transform: translateX(-50%) translateY(-20px);
+            background: rgba(20,20,35,0.9); backdrop-filter: blur(20px); color: #fff; padding: 14px 28px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); z-index: 1000; font-weight: 600; white-space: nowrap; opacity: 0; transition: all 0.4s var(--curve-spring); box-shadow: 0 10px 30px rgba(0,0,0,0.5); pointer-events: none;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        input[type="file"] { display: none; }
+
+        @media (max-width: 1024px) {
+            .content-grid { flex-direction: column; overflow-y: auto; padding: 20px; align-items: center; }
+            .col-album { flex: 0 0 auto; width: 100%; max-width: 380px;}
+            .col-controls { flex: 0 0 auto; width: 100%; max-width: 480px;}
+            .col-lyrics { flex: 0 0 auto; width: 100%; max-width: 480px; min-height: 400px; mask-image: none; -webkit-mask-image: none;}
+            .player-wrapper { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+            .imm-bottom { flex-direction: column; gap: 15px; padding: 20px; }
+            .imm-bottom .vol-control { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 动态背景层 (全局公用) -->
+    <div id="bg-layer-img"></div>
+    <div id="bg-layer-color"></div>
+
+    <!-- 沉浸模式粒子频谱背景 -->
+    <canvas id="immersive-bg-canvas"></canvas>
+
+    <!-- ================= 视图 1：主界面 ================= -->
+    <div class="view-container" id="view-main">
+        <div class="player-wrapper">
+            <div class="header">
+                <div class="brand"><i id="logoIcon">♪</i> MBolka Player</div>
+                <div class="nav-actions">
+                    <button class="btn-glass focusable" id="btnToggleList"><i>📃</i> 列表</button>
+                    <button class="btn-glass focusable" id="btnToggleLrc"><i>📝</i> 歌词</button>
+                    <button class="btn-glass focusable" id="btnSettings"><i>⚙️</i> 设置</button>
+                    <button class="btn-glass focusable" id="btnLoadFolder" style="background: var(--primary); color: #000; border:none;"><i>📁</i> 载入音乐</button>
+                    <input type="file" id="folderInput" webkitdirectory directory multiple>
+                </div>
+            </div>
+
+            <div class="load-strip-container" id="loadWrap"><div class="load-strip" id="loadBar"></div></div>
+
+            <div class="content-grid">
+                <!-- 左侧：专辑 -->
+                <div class="col col-album" id="main-col-album">
+                    <div class="art-box">
+                        <img id="main-artImg" class="art-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                    </div>
+                    <div class="track-info">
+                        <div class="track-title" id="main-songTitle">MBolka Player Ultimate</div>
+                        <div class="track-artist" id="main-songArtist">等待载入音乐...</div>
+                    </div>
+                </div>
+
+                <!-- 中部：控制 -->
+                <div class="col col-controls">
+                    <div class="vis-canvas-container focusable" id="btnEnterImmersive" title="点击或按 I 键 / 手柄十字键下 进入沉浸模式">
+                        <canvas id="spectrumCanvasMain"></canvas>
+                        <div class="vis-hint">点击进入沉浸舱</div>
+                    </div>
+                    <div>
+                        <div class="progress-area" id="main-progArea">
+                            <div class="prog-bg"><div class="prog-fill" id="main-progFill"></div></div>
+                        </div>
+                        <div class="time-labels">
+                            <span id="timeCur">0:00</span><span id="timeTot">0:00</span>
+                        </div>
+                    </div>
+                    <div class="btn-group-main">
+                        <button class="btn-ctrl focusable" id="btnPrev">⏮</button>
+                        <button class="btn-ctrl btn-play focusable" id="btnPlay">▶</button>
+                        <button class="btn-ctrl focusable" id="btnNext">⏭</button>
+                    </div>
+                    <div class="btn-group-sub">
+                        <button class="btn-mode focusable" id="btnModeToggle" title="顺序播放 (S/M)">⇄</button>
+                        <div class="vol-control">
+                            <span>🔊</span>
+                            <input type="range" id="volSlider" class="focusable" min="0" max="1" step="0.01" value="0.7" title="键盘上下 / 手柄LT RT调节">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：歌词 -->
+                <div class="col col-lyrics" id="lrcPanel" style="display: none;">
+                    <div class="lrc-viewport" id="lrcViewport">
+                        <div class="lrc-line" style="opacity: 0.5;">载入歌曲后显示歌词</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页脚 -->
+            <div class="footer">
+                <div id="fileInfo">就绪</div>
+                <div id="gamepadStatus">⌨️ 等待手柄接入...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 视图 2：沉浸模式 ================= -->
+    <div class="view-container hidden" id="view-immersive">
+        <div class="imm-wrapper">
+            <div class="imm-topbar">
+                <div class="imm-track-card" id="imm-trackCard">
+                    <div class="imm-album-art"><img id="imm-artImg" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iIzFhMWEyZSIvPjwvc3ZnPg=="></div>
+                    <div class="track-info" style="text-align: left;">
+                        <div class="track-title" id="imm-songTitle" style="font-size: 22px; margin-bottom:4px;">沉浸式音乐舱</div>
+                        <div class="track-artist" id="imm-songArtist" style="font-size: 16px; color: var(--primary);">就绪</div>
+                    </div>
+                </div>
+                <div class="imm-header-actions">
+                    <button class="imm-icon-btn focusable" id="btnExitImmersive" title="返回主界面 (Esc / 十字键下)">✖</button>
+                </div>
+            </div>
+
+            <div class="imm-lyrics-center" id="imm-lyricsCenter">
+                <div class="imm-subtitle">
+                    <div class="imm-subtitle-line" id="imm-currLine">请载入本地音乐以开始</div>
+                    <div class="imm-subtitle-line next" id="imm-nextLine"></div>
+                </div>
+            </div>
+
+            <div class="imm-bottom">
+                <div class="btn-group-main" style="gap: 16px;">
+                    <button class="btn-ctrl focusable" id="imm-btnPrev" style="width:50px; height:50px; font-size:16px;">⏮</button>
+                    <button class="btn-ctrl btn-play focusable" id="imm-btnPlay" style="width:64px; height:64px; font-size:24px;">▶</button>
+                    <button class="btn-ctrl focusable" id="imm-btnNext" style="width:50px; height:50px; font-size:16px;">⏭</button>
+                </div>
+                <div style="flex: 1;">
+                    <div class="progress-area" id="imm-progArea">
+                        <div class="prog-bg"><div class="prog-fill" id="imm-progFill"></div></div>
+                    </div>
+                </div>
+                <button class="btn-mode focusable" id="imm-btnMode" title="顺序播放 (S/M)">⇄</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 弹窗组件 ================= -->
+    <!-- 播放列表弹窗 -->
+    <div class="modal-overlay" id="playlistModal">
+        <div class="modal-content" style="height: 60vh;">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;">播放列表</h2>
+                <button class="btn-glass focusable" id="btnCloseList" style="padding: 6px 12px;">关闭 (B/Esc)</button>
+            </div>
+            <div class="playlist-items" id="playlistContainer">
+                <div style="color:var(--text-sub); text-align:center; padding:20px;">空空如也</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;">系统与操作设置</h2>
+                <button class="btn-glass focusable" id="btnCloseSettings" style="padding: 6px 12px;">关闭 (B/Esc)</button>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">UI 视觉引擎</div>
+                <button class="btn-glass focusable" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">开启取色模式 (Y / C)</button>
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px;">背景模糊强度: <span id="blurVal">40px</span></div>
+                <input type="range" class="focusable" id="blurSlider" min="0" max="100" value="40">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">自定义背景 (优先)</div>
+                <button class="btn-glass focusable" id="btnSetBg" style="width: 100%; justify-content: center; margin-bottom: 10px;">上传本地图片</button>
+                <button class="btn-glass focusable" id="btnClearBg" style="width: 100%; justify-content: center; color: #ff6b6b; border-color: rgba(255,107,107,0.3);">恢复默认逻辑</button>
+                <input type="file" id="bgInput" accept="image/*">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">全域操作指南 (键盘 & 手柄)</div>
+                <div class="hotkey-grid">
+                    <span><kbd>Space</kbd> / <kbd class="pad">A键</kbd></span> <span>播放 / 暂停 / 确认选定项</span>
+                    <span><kbd>← / →</kbd> / <kbd class="pad">LB / RB</kbd></span> <span>上一曲 / 下一曲</span>
+                    <span><kbd>↑ / ↓</kbd> / <kbd class="pad">LT / RT</kbd></span> <span>音量加减</span>
+                    <span><kbd>J / K</kbd> / <kbd class="pad">十字 左/右</kbd></span> <span>快退 / 快进 10秒</span>
+                    <span><kbd>I</kbd> / <kbd class="pad">十字 下</kbd></span> <span><b>切换沉浸舱模式</b></span>
+                    <span><kbd>S / M</kbd> / <kbd class="pad">X键</kbd></span> <span>切换顺序 / 随机播放</span>
+                    <span><kbd>C</kbd> / <kbd class="pad">Y键</kbd></span> <span>开关取色模式</span>
+                    <span><kbd>L / P</kbd> / <kbd class="pad">十字 上</kbd></span> <span>开关歌词 / 播放列表</span>
+                    <span><kbd>WASD</kbd> / <kbd class="pad">左摇杆</kbd></span> <span><b>UI 焦点导航 (脱离鼠标)</b></span>
+                    <span><kbd>Esc</kbd> / <kbd class="pad">B键</kbd></span> <span>关闭弹窗 / 退出沉浸</span>
+                    <span><kbd>F</kbd> / <kbd class="pad">View</kbd></span> <span>全屏开关</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toastMsg"></div>
+
+    <script>
+        /** === 核心状态与全局变量 === */
+        const audio = new Audio(); audio.crossOrigin = "anonymous";
+        let audioCtx, analyser, source, dataArray;
+        let spectrumCtxMain; // 主界面画笔
+        
+        let playlist = [], lrcMap = new Map(), playHistory = [];
+        let currentIndex = -1, isPlaying = false, isShuffle = false, isImmersiveMode = false;
+        let parsedLyrics = [], isUserScrollingLyrics = false, lyricsScrollTimeout = null;
+        let gamepadConnected = false, prevPadBtns = [];
+        
+        // 视觉特效参数 (沉浸模式)
+        let particles = [], ripples = [];
+        const MAX_PARTICLES = 50, MAX_RIPPLES = 5;
+        let emitterX = window.innerWidth / 2, emitterY = window.innerHeight / 2;
+        let currentHue = 210, targetHue = 210, visTime = 0;
+
+        // 偏好配置
+        let cfg = { colorMode: false, customBgImg: null, customBgColor: null, blurAmt: 40, defaultColor: '#9ac8e2' };
+        let currentAlbumColor = null, hasCurrentAlbumArt = false;
+
+        /** === DOM 引用映射 === */
+        const el = {
+            viewMain: document.getElementById('view-main'), viewImm: document.getElementById('view-immersive'),
+            bgImg: document.getElementById('bg-layer-img'), bgColor: document.getElementById('bg-layer-color'),
+            canvasImm: document.getElementById('immersive-bg-canvas'), canvasMain: document.getElementById('spectrumCanvasMain'),
+            folderIn: document.getElementById('folderInput'), btnLoad: document.getElementById('btnLoadFolder'),
+            btnPlay: document.getElementById('btnPlay'), btnPrev: document.getElementById('btnPrev'), btnNext: document.getElementById('btnNext'),
+            progAreaMain: document.getElementById('main-progArea'), progFillMain: document.getElementById('main-progFill'),
+            timeCur: document.getElementById('timeCur'), timeTot: document.getElementById('timeTot'), volSlider: document.getElementById('volSlider'),
+            mainColAlbum: document.getElementById('main-col-album'), mainTitle: document.getElementById('main-songTitle'), mainArtist: document.getElementById('main-songArtist'), mainArt: document.getElementById('main-artImg'),
+            lrcView: document.getElementById('lrcViewport'), lrcPanel: document.getElementById('lrcPanel'), btnToggleLrc: document.getElementById('btnToggleLrc'),
+            toast: document.getElementById('toastMsg'), loadBar: document.getElementById('loadBar'), loadWrap: document.getElementById('loadWrap'),
+            btnMode: document.getElementById('btnModeToggle'), padStatus: document.getElementById('gamepadStatus'), fileInfo: document.getElementById('fileInfo'),
+            settingsModal: document.getElementById('settingsModal'), playlistModal: document.getElementById('playlistModal'), plContainer: document.getElementById('playlistContainer'),
+            
+            // 沉浸模式特定元素
+            immTrackCard: document.getElementById('imm-trackCard'), immArt: document.getElementById('imm-artImg'), immTitle: document.getElementById('imm-songTitle'), immArtist: document.getElementById('imm-songArtist'),
+            immLrcCenter: document.getElementById('imm-lyricsCenter'), immCurrLine: document.getElementById('imm-currLine'), immNextLine: document.getElementById('imm-nextLine'),
+            immProgArea: document.getElementById('imm-progArea'), immProgFill: document.getElementById('imm-progFill'),
+            immBtnPlay: document.getElementById('imm-btnPlay'), immBtnPrev: document.getElementById('imm-btnPrev'), immBtnNext: document.getElementById('imm-btnNext'), immBtnMode: document.getElementById('imm-btnMode')
+        };
+
+        /** === 工具函数 === */
+        const showToast = (msg, icon='') => { el.toast.innerHTML = `${icon} ${msg}`; el.toast.classList.add('show'); setTimeout(() => el.toast.classList.remove('show'), 2500); };
+        const formatTime = (sec) => { if (!sec || isNaN(sec)) return '0:00'; const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s.toString().padStart(2, '0')}`; };
+        const decodeText = (str) => { if (!str) return ''; let s = str.replace(/\\u([0-9a-fA-F]{4})/g, (m, g) => String.fromCharCode(parseInt(g, 16))); const txt = document.createElement("textarea"); txt.innerHTML = s; return txt.value; };
+        
+        const saveSettings = () => { try { localStorage.setItem('MBolka_Cfg', JSON.stringify({ colorMode: cfg.colorMode, blurAmt: cfg.blurAmt, vol: audio.volume, isShuffle: isShuffle, customBgImg: cfg.customBgImg, customBgColor: cfg.customBgColor })); } catch(e){} };
+        const loadSettings = () => {
+            try {
+                const stored = JSON.parse(localStorage.getItem('MBolka_Cfg'));
+                if (stored) {
+                    cfg.colorMode = stored.colorMode; cfg.blurAmt = stored.blurAmt; audio.volume = stored.vol ?? 0.7; isShuffle = stored.isShuffle;
+                    cfg.customBgImg = stored.customBgImg; cfg.customBgColor = stored.customBgColor;
+                    el.volSlider.value = audio.volume; document.getElementById('blurSlider').value = cfg.blurAmt;
+                    document.getElementById('blurVal').textContent = `${cfg.blurAmt}px`; updateModeUI(); updateSettingsUI(); applyThemeLogic();
+                }
+            } catch(e) { audio.volume = 0.7; }
+        };
+
+        const extractColor = (imgSrc) => {
+            return new Promise((resolve) => {
+                if (!imgSrc || imgSrc.startsWith('data:image/svg')) return resolve(null);
+                const img = new Image();
+                img.onload = () => {
+                    const cvs = document.createElement('canvas'); cvs.width = 32; cvs.height = 32;
+                    const ctx = cvs.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, 32, 32);
+                    try {
+                        const data = ctx.getImageData(0, 0, 32, 32).data; let r=0, g=0, b=0, count=0;
+                        for(let i=0; i<data.length; i+=16) { if(data[i]>20 && data[i]<235) { r+=data[i]; g+=data[i+1]; b+=data[i+2]; count++; } }
+                        resolve(count > 0 ? `rgb(${~~(r/count)},${~~(g/count)},${~~(b/count)})` : null);
+                    } catch(e) { resolve(null); }
+                }; img.onerror = () => resolve(null); img.src = imgSrc;
+            });
+        };
+        const getHueFromRgb = (rgbStr) => {
+            if (!rgbStr) return 210; const match = rgbStr.match(/\d+/g); if (!match) return 210;
+            let r = parseInt(match[0])/255, g = parseInt(match[1])/255, b = parseInt(match[2])/255;
+            const max = Math.max(r,g,b), min = Math.min(r,g,b); let h = 0;
+            if (max !== min) { const d = max - min; switch (max) { case r: h = (g-b)/d + (g<b?6:0); break; case g: h = (b-r)/d + 2; break; case b: h = (r-g)/d + 4; break; } h /= 6; } return h * 360;
+        };
+
+        /** === 核心视觉与主题逻辑 === */
+        const applyThemeLogic = () => {
+            let targetColor = cfg.defaultColor; let showImg = false, showColor = false, bgUrl = '';
+            
+            if (cfg.colorMode) targetColor = cfg.customBgImg ? (cfg.customBgColor || targetColor) : (currentAlbumColor || targetColor);
+            document.documentElement.style.setProperty('--primary', targetColor);
+            document.documentElement.style.setProperty('--bg-blur', `${cfg.blurAmt}px`);
+            targetHue = getHueFromRgb(targetColor);
+
+            if (cfg.customBgImg) { showImg = true; bgUrl = cfg.customBgImg; } 
+            else if (hasCurrentAlbumArt && !cfg.colorMode) { showImg = true; bgUrl = el.mainArt.src; } 
+            else showColor = true;
+            
+            if (showImg) { el.bgImg.style.backgroundImage = `url(${bgUrl})`; el.bgImg.classList.add('active'); el.bgColor.classList.remove('active'); } 
+            else if (showColor) { el.bgColor.style.background = `linear-gradient(135deg, ${targetColor} 0%, var(--bg-dark) 100%)`; el.bgColor.classList.add('active'); el.bgImg.classList.remove('active'); }
+        };
+
+        const toggleImmersiveMode = () => {
+            isImmersiveMode = !isImmersiveMode;
+            if (isImmersiveMode) {
+                el.viewMain.classList.add('hidden'); el.viewImm.classList.remove('hidden');
+                document.body.style.background = 'var(--bg-darker)';
+                showToast("🚀 已进入沉浸式音乐舱");
+            } else {
+                el.viewImm.classList.add('hidden'); el.viewMain.classList.remove('hidden');
+                document.body.style.background = 'var(--bg-dark)';
+            }
+            updateFocusContext(); // 更新UI焦点地图
+        };
+
+        const toggleFullscreen = () => {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(e=>{}); showToast("⛶ 进入全屏"); } 
+            else { if (document.exitFullscreen) document.exitFullscreen(); showToast("⛶ 退出全屏"); }
+        };
+
+        /** === 文件解析与播放列表 === */
+        const parseMetadata = (file) => {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(file);
+                const meta = { title: file.name.replace(/\.[^/.]+$/, ""), artist: "未知", url, file };
+                if (window.jsmediatags) {
+                    jsmediatags.read(file, {
+                        onSuccess: tag => {
+                            if(tag.tags.title) meta.title = decodeText(tag.tags.title); if(tag.tags.artist) meta.artist = decodeText(tag.tags.artist);
+                            if(tag.tags.picture) { let b64 = ''; const d = tag.tags.picture.data; for(let i=0; i<d.length; i++) b64 += String.fromCharCode(d[i]); meta.art = `data:${tag.tags.picture.format};base64,${window.btoa(b64)}`; }
+                            resolve(meta);
+                        }, onError: () => resolve(meta)
+                    });
+                } else resolve(meta);
+            });
+        };
+
+        const renderPlaylist = () => {
+            el.plContainer.innerHTML = '';
+            playlist.forEach((s, i) => {
+                const div = document.createElement('div');
+                div.className = `pl-item focusable ${i === currentIndex ? 'active' : ''}`; // 标记为可聚焦
+                div.innerHTML = `<span class="pl-title">${s.title}</span> <span style="font-size:12px;opacity:0.6;">${s.artist}</span>`;
+                div.onclick = () => { playAudio(i); closeAllModals(); };
+                el.plContainer.appendChild(div);
+            });
+            updateFocusContext();
+            const activeItem = el.plContainer.querySelector('.active');
+            if(activeItem && el.playlistModal.classList.contains('open')) activeItem.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        };
+
+        el.folderIn.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files); if (!files.length) return;
+            playlist = []; lrcMap.clear(); const audios = [];
+            files.forEach(f => {
+                const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+                if (['.mp3','.flac','.wav','.m4a'].includes(ext)) audios.push(f); else if (ext === '.lrc') lrcMap.set(f.name.replace('.lrc','').toLowerCase(), f);
+            });
+            if (!audios.length) return showToast("⚠️ 未发现音频");
+            
+            el.loadWrap.classList.add('show'); const initLen = Math.min(20, audios.length);
+            for(let i=0; i<initLen; i++) { playlist.push(await parseMetadata(audios[i])); el.loadBar.style.width = `${((i+1)/audios.length)*100}%`; }
+            showToast(`🚀 首批 ${initLen} 首就绪，随机开播`);
+            isShuffle = true; updateModeUI(); renderPlaylist(); await playAudio(Math.floor(Math.random() * playlist.length));
+
+            if (audios.length > initLen) {
+                let curr = initLen;
+                const parseChunk = async () => {
+                    const end = Math.min(curr + 10, audios.length);
+                    for(let i = curr; i < end; i++) playlist.push(await parseMetadata(audios[i]));
+                    curr = end; el.loadBar.style.width = `${(curr/audios.length)*100}%`;
+                    if (curr % 50 === 0) renderPlaylist();
+                    if (curr < audios.length) requestAnimationFrame(parseChunk);
+                    else { setTimeout(()=> el.loadWrap.classList.remove('show'), 1000); renderPlaylist(); showToast(`✅ 全库 ${audios.length} 首加载完毕`); }
+                }; requestAnimationFrame(parseChunk);
+            } else setTimeout(()=> el.loadWrap.classList.remove('show'), 500);
+        });
+
+        /** === 歌词引擎 === */
+        const loadLrc = async (song) => {
+            parsedLyrics = []; el.lrcView.innerHTML = ''; el.immCurrLine.textContent = ''; el.immNextLine.textContent = '';
+            const base = song.file.name.replace(/\.[^/.]+$/, "").toLowerCase(); let file = lrcMap.get(base);
+            if(!file) for (let [k, v] of lrcMap.entries()) if (k.includes(base) || base.includes(k)) { file = v; break; }
+
+            if (!file) {
+                // 无歌词逻辑
+                el.lrcPanel.style.display = 'none'; el.btnToggleLrc.classList.remove('active');
+                el.immLrcCenter.classList.add('hidden'); // 隐藏沉浸模式歌词
+                return;
+            }
+
+            const text = await new Promise(resolve => {
+                const r = new FileReader();
+                r.onload = e => { try { resolve(new TextDecoder('utf-8', {fatal: true}).decode(e.target.result)); } catch { const r2=new FileReader(); r2.onload=ev=>resolve(ev.target.result); r2.readAsText(file, 'gbk'); } }; r.readAsArrayBuffer(file);
+            });
+
+            text.split(/\r?\n/).forEach(line => {
+                const times = line.match(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g);
+                if (times) {
+                    const txt = decodeText(line.replace(/\[.*?\]/g, '').trim());
+                    if (txt) { times.forEach(t => { const match = t.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/); if (match) { const ms = match[3] ? parseInt(match[3].padEnd(3,'0')) : 0; parsedLyrics.push({ time: parseInt(match[1])*60 + parseInt(match[2]) + ms/1000, text: txt }); } }); }
+                }
+            }); parsedLyrics.sort((a,b) => a.time - b.time);
+
+            if(parsedLyrics.length) {
+                // 有歌词逻辑
+                el.lrcPanel.style.display = 'flex'; el.btnToggleLrc.classList.add('active');
+                el.immLrcCenter.classList.remove('hidden'); // 显示沉浸模式歌词
+                parsedLyrics.forEach((l) => {
+                    const d = document.createElement('div'); d.className = 'lrc-line'; d.textContent = l.text;
+                    d.onclick = () => { audio.currentTime = l.time; syncLyrics(true); }; el.lrcView.appendChild(d);
+                });
+            } else {
+                el.lrcPanel.style.display = 'none'; el.btnToggleLrc.classList.remove('active'); el.immLrcCenter.classList.add('hidden');
+            }
+        };
+
+        const handleUserScroll = () => { isUserScrollingLyrics = true; clearTimeout(lyricsScrollTimeout); lyricsScrollTimeout = setTimeout(() => { isUserScrollingLyrics = false; syncLyrics(); }, 2000); };
+        el.lrcView.addEventListener('wheel', handleUserScroll, {passive: true}); el.lrcView.addEventListener('touchmove', handleUserScroll, {passive: true});
+
+        const syncLyrics = (force = false) => {
+            if(!parsedLyrics.length) return;
+            const cur = audio.currentTime; let activeIdx = -1;
+            for (let i = 0; i < parsedLyrics.length; i++) { if (cur >= parsedLyrics[i].time - 0.2) activeIdx = i; else break; }
+
+            // 主界面滚动同步
+            if (el.lrcPanel.style.display !== 'none') {
+                const lines = el.lrcView.querySelectorAll('.lrc-line');
+                lines.forEach((line, i) => {
+                    if (i === activeIdx) {
+                        if (!line.classList.contains('active')) {
+                            line.classList.add('active');
+                            if (!isUserScrollingLyrics || force) {
+                                const offset = line.offsetTop - el.lrcView.offsetTop - (el.lrcView.clientHeight / 2) + (line.clientHeight / 2);
+                                el.lrcView.scrollTo({ top: offset, behavior: 'smooth' });
+                            }
+                        }
+                    } else line.classList.remove('active');
+                });
+            }
+
+            // 沉浸模式替换同步
+            if (activeIdx !== -1 && !el.immLrcCenter.classList.contains('hidden')) {
+                const curTxt = parsedLyrics[activeIdx].text; const nextTxt = activeIdx+1 < parsedLyrics.length ? parsedLyrics[activeIdx+1].text : '';
+                if(el.immCurrLine.textContent !== curTxt) { el.immCurrLine.style.opacity=0; setTimeout(()=>{ el.immCurrLine.textContent=curTxt; el.immCurrLine.style.opacity=1; }, 200); }
+                if(el.immNextLine.textContent !== nextTxt) { el.immNextLine.style.opacity=0; setTimeout(()=>{ el.immNextLine.textContent=nextTxt; el.immNextLine.style.opacity=1; }, 200); }
+            }
+        };
+
+        /** === 播放控制 === */
+        const playAudio = async (idx) => {
+            if (!playlist[idx]) return;
+            if (currentIndex !== idx) { playHistory.push(idx); currentIndex = idx; }
+            const song = playlist[idx]; audio.src = song.url;
+            
+            // 同步信息到双界面
+            el.mainTitle.textContent = el.immTitle.textContent = song.title;
+            el.mainArtist.textContent = el.immArtist.textContent = song.artist;
+            document.title = `${song.title} - ${song.artist}`;
+            el.fileInfo.innerHTML = `📄 ${song.file.name} <span style="opacity:0.5; margin-left:10px;">(${(song.file.size/1048576).toFixed(2)} MB)</span>`;
+            
+            hasCurrentAlbumArt = !!song.art;
+            if (hasCurrentAlbumArt) { 
+                el.mainArt.src = el.immArt.src = song.art; currentAlbumColor = await extractColor(song.art); 
+                el.mainColAlbum.classList.remove('no-art'); el.immTrackCard.classList.remove('no-art');
+            } else { 
+                el.mainArt.src = el.immArt.src = ""; currentAlbumColor = null; 
+                el.mainColAlbum.classList.add('no-art'); el.immTrackCard.classList.add('no-art');
+            }
+            
+            applyThemeLogic(); await loadLrc(song); renderPlaylist();
+            
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: song.artist, artwork: song.art ? [{ src: song.art, sizes: '512x512', type: 'image/jpeg' }] : [] });
+                navigator.mediaSession.setActionHandler('play', togglePlay); navigator.mediaSession.setActionHandler('pause', togglePlay);
+                navigator.mediaSession.setActionHandler('previoustrack', goPrev); navigator.mediaSession.setActionHandler('nexttrack', goNext);
+            }
+
+            try { await audio.play(); setPlayState(true); if(!audioCtx) initVis(); } catch(e) { showToast("❌ 播放受阻"); }
+        };
+
+        const setPlayState = (playing) => {
+            isPlaying = playing;
+            el.btnPlay.textContent = el.immBtnPlay.textContent = playing ? '⏸' : '▶';
+            if(playing && !audioCtx) initVis();
+        };
+
+        const togglePlay = () => { if (!playlist.length) return el.btnLoad.click(); if (isPlaying) audio.pause(); else audio.play(); setPlayState(!isPlaying); createRipple(window.innerWidth/2, window.innerHeight/2);};
+        const goNext = () => { if(!playlist.length) return; playAudio(isShuffle ? Math.floor(Math.random()*playlist.length) : (currentIndex + 1) % playlist.length); createExplosion(window.innerWidth*0.8, window.innerHeight/2, 2); };
+        const goPrev = () => { if(!playlist.length) return; if(isShuffle) { playHistory.pop(); playAudio(playHistory.length ? playHistory.pop() : Math.floor(Math.random()*playlist.length)); } else playAudio((currentIndex - 1 + playlist.length) % playlist.length); createExplosion(window.innerWidth*0.2, window.innerHeight/2, 2);};
+
+        // 绑定双端按钮
+        el.btnPlay.onclick = el.immBtnPlay.onclick = togglePlay;
+        el.btnNext.onclick = el.immBtnNext.onclick = goNext;
+        el.btnPrev.onclick = el.immBtnPrev.onclick = goPrev;
+        audio.onended = goNext;
+        
+        audio.ontimeupdate = () => { 
+            if (audio.duration) { 
+                const pct = `${(audio.currentTime / audio.duration) * 100}%`;
+                el.progFillMain.style.width = el.immProgFill.style.width = pct;
+                el.timeCur.textContent = formatTime(audio.currentTime); 
+                syncLyrics(); 
+            }
+        };
+        audio.onloadedmetadata = () => el.timeTot.textContent = formatTime(audio.duration);
+        
+        const seek = (e, container) => { if (audio.duration) { audio.currentTime = ((e.clientX - container.getBoundingClientRect().left) / container.offsetWidth) * audio.duration; createExplosion(e.clientX, e.clientY, 1.5); } };
+        el.progAreaMain.onclick = (e) => seek(e, el.progAreaMain);
+        el.immProgArea.onclick = (e) => seek(e, el.immProgArea);
+        
+        el.volSlider.oninput = (e) => { audio.volume = e.target.value; saveSettings(); };
+        const adjustVolume = (delta) => { audio.volume = Math.max(0, Math.min(1, audio.volume + delta)); el.volSlider.value = audio.volume; saveSettings(); };
+
+        /** === 可视化引擎 (双路合一) === */
+        class Particle {
+            constructor(x, y, vx, vy, color, size) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.color = color; this.size = size; this.life = 1; }
+            update() { this.x += this.vx; this.y += this.vy; this.life -= 0.02; this.size *= 0.95; this.vx *= 0.95; this.vy *= 0.95; return this.life > 0; }
+            draw(ctx) { ctx.save(); ctx.globalAlpha = this.life; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+        }
+        class Ripple {
+            constructor(x, y, color) { this.x = x; this.y = y; this.radius = 5; this.color = color; this.life = 1; }
+            update() { this.radius += 10; this.life -= 0.04; return this.life > 0; }
+            draw(ctx) { ctx.save(); ctx.globalAlpha = this.life; ctx.strokeStyle = this.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.stroke(); ctx.restore(); }
+        }
+        const createExplosion = (x, y, intensity) => { if(!isImmersiveMode) return; const count = Math.floor(6 * intensity); for (let i=0; i<count; i++) { const ang = Math.random() * Math.PI*2, spd = 1 + Math.random()*3*intensity; particles.push(new Particle(x, y, Math.cos(ang)*spd, Math.sin(ang)*spd, `hsl(${currentHue},80%,70%)`, 2+Math.random()*4)); } };
+        const createRipple = (x, y) => { if(isImmersiveMode) ripples.push(new Ripple(x, y, `hsl(${currentHue},80%,70%)`)); };
+
+        const initVis = () => {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+                source = audioCtx.createMediaElementSource(audio); source.connect(analyser); analyser.connect(audioCtx.destination);
+                dataArray = new Uint8Array(analyser.frequencyBinCount); 
+                spectrumCtxMain = el.canvasMain.getContext('2d');
+                renderVisLoop();
+            } catch(e) {}
+        };
+
+        const renderVisLoop = () => {
+            requestAnimationFrame(renderVisLoop);
+            analyser.getByteFrequencyData(dataArray);
+            
+            if (isImmersiveMode) {
+                // 渲染沉浸模式 (环状+粒子)
+                const cvs = el.canvasImm, ctx = cvs.getContext('2d');
+                if (cvs.width !== window.innerWidth || cvs.height !== window.innerHeight) { cvs.width = window.innerWidth; cvs.height = window.innerHeight; }
+                ctx.clearRect(0, 0, cvs.width, cvs.height); visTime += 0.01;
+                
+                if (cfg.colorMode) { let diff = targetHue - currentHue; if (diff > 180) diff -= 360; else if (diff < -180) diff += 360; currentHue += diff * 0.05; } 
+                else currentHue = (currentHue + 0.1) % 360; if (currentHue < 0) currentHue += 360;
+
+                if (isPlaying) {
+                    const bass = (dataArray[2] + dataArray[3])/2; const cx = cvs.width/2, cy = cvs.height/2; const radius = 150 + bass*0.6;
+                    ctx.save(); ctx.translate(cx, cy);
+                    for (let i=0; i<64; i+=2) {
+                        const angle = (i/64)*Math.PI*2; const val = dataArray[i]/255; const extR = radius + val*150; const h = (currentHue + i*2) % 360;
+                        ctx.strokeStyle = `hsla(${h}, 80%, 65%, ${0.4 + val*0.6})`; ctx.lineWidth = 4;
+                        ctx.beginPath(); ctx.moveTo(Math.cos(angle)*radius, Math.sin(angle)*radius); ctx.lineTo(Math.cos(angle)*extR, Math.sin(angle)*extR); ctx.stroke();
+                    } ctx.restore();
+                    if (bass > 210 && Math.random() < 0.2) createExplosion(emitterX + (Math.random()-0.5)*200, emitterY + (Math.random()-0.5)*200, 1.2);
+                }
+                if (particles.length > MAX_PARTICLES) particles.splice(0, particles.length - MAX_PARTICLES); if (ripples.length > MAX_RIPPLES) ripples.shift();
+                particles = particles.filter(p => { if(p.update()){ p.draw(ctx); return true; } return false; }); ripples = ripples.filter(r => { if(r.update()){ r.draw(ctx); return true; } return false; });
+            } else {
+                // 渲染主界面 (底部条状)
+                const cvs = el.canvasMain; cvs.width = cvs.offsetWidth; cvs.height = cvs.offsetHeight;
+                spectrumCtxMain.clearRect(0,0, cvs.width, cvs.height);
+                const w = (cvs.width / (analyser.frequencyBinCount/2)); let x = 0;
+                for(let i=0; i<analyser.frequencyBinCount/2; i++) {
+                    const h = (dataArray[i]/255) * cvs.height; spectrumCtxMain.fillStyle = 'rgba(255, 255, 255, 0.45)';
+                    spectrumCtxMain.fillRect(x, cvs.height - h, w-1, h); x += w;
+                }
+            }
+        };
+
+        /** === 模态与 UI 控制 === */
+        const closeAllModals = () => { el.settingsModal.classList.remove('open'); el.playlistModal.classList.remove('open'); updateFocusContext(); };
+        
+        el.btnLoad.onclick = () => el.folderIn.click();
+        el.btnToggleLrc.onclick = () => { const isH = el.lrcPanel.style.display === 'none'; el.lrcPanel.style.display = isH ? 'flex' : 'none'; el.btnToggleLrc.classList.toggle('active', isH); if(isH) syncLyrics(true); };
+        
+        document.getElementById('btnToggleList').onclick = () => { closeAllModals(); el.playlistModal.classList.add('open'); renderPlaylist(); };
+        document.getElementById('btnCloseList').onclick = closeAllModals;
+        document.getElementById('btnSettings').onclick = () => { closeAllModals(); el.settingsModal.classList.add('open'); updateFocusContext(); };
+        document.getElementById('btnCloseSettings').onclick = closeAllModals;
+        document.querySelectorAll('.modal-overlay').forEach(m => m.onclick = (e) => { if(e.target === m) closeAllModals(); });
+
+        document.getElementById('btnEnterImmersive').onclick = toggleImmersiveMode;
+        document.getElementById('btnExitImmersive').onclick = toggleImmersiveMode;
+
+        function updateModeUI() { 
+            el.btnMode.textContent = el.immBtnMode.textContent = isShuffle ? '🔀' : '⇄';
+            el.btnMode.classList.toggle('active', isShuffle); el.immBtnMode.classList.toggle('active', isShuffle);
+        }
+        function updateSettingsUI() { const btn = document.getElementById('btnToggleColorMode'); btn.textContent = cfg.colorMode ? '关闭取色模式 (Y/C)' : '开启取色模式 (Y/C)'; btn.style.color = cfg.colorMode ? 'var(--primary)' : ''; btn.style.borderColor = cfg.colorMode ? 'var(--primary)' : ''; }
+        
+        const toggleShuffle = () => { isShuffle = !isShuffle; updateModeUI(); saveSettings(); showToast(isShuffle ? "模式：随机播放" : "模式：顺序播放", "🔄"); };
+        el.btnMode.onclick = el.immBtnMode.onclick = toggleShuffle;
+
+        const toggleColorMode = () => { cfg.colorMode = !cfg.colorMode; updateSettingsUI(); applyThemeLogic(); saveSettings(); showToast(cfg.colorMode ? "已开启取色跟随" : "已关闭取色跟随", "🎨"); };
+        document.getElementById('btnToggleColorMode').onclick = toggleColorMode;
+        document.getElementById('blurSlider').oninput = function() { cfg.blurAmt = this.value; document.getElementById('blurVal').textContent = `${this.value}px`; applyThemeLogic(); saveSettings(); };
+
+        document.getElementById('btnSetBg').onclick = () => document.getElementById('bgInput').click();
+        document.getElementById('bgInput').onchange = (e) => { const f = e.target.files[0]; if(f) { const r = new FileReader(); r.onload = async (ev) => { cfg.customBgImg = ev.target.result; cfg.customBgColor = await extractColor(cfg.customBgImg); applyThemeLogic(); saveSettings(); showToast("🖼️ 自定义背景应用成功"); }; r.readAsDataURL(f); } };
+        document.getElementById('btnClearBg').onclick = () => { cfg.customBgImg = null; cfg.customBgColor = null; applyThemeLogic(); saveSettings(); showToast("🗑️ 已恢复默认"); };
+
+        /** === 全域焦点控制系统 (完全摇杆适配) === */
+        let focusableElements = [];
+        let currentFocusIndex = -1;
+        let lastNavTime = 0;
+
+        const updateFocusContext = () => {
+            // 清除旧焦点
+            focusableElements.forEach(el => el.classList.remove('gamepad-focus'));
+            currentFocusIndex = -1;
+
+            if (el.settingsModal.classList.contains('open')) {
+                focusableElements = Array.from(el.settingsModal.querySelectorAll('.focusable'));
+            } else if (el.playlistModal.classList.contains('open')) {
+                focusableElements = Array.from(el.playlistModal.querySelectorAll('.focusable'));
+            } else if (isImmersiveMode) {
+                focusableElements = Array.from(el.viewImm.querySelectorAll('.focusable'));
+            } else {
+                focusableElements = Array.from(el.viewMain.querySelectorAll('.focusable'));
+            }
+        };
+
+        const moveFocus = (direction) => {
+            if (focusableElements.length === 0) return;
+            if (currentFocusIndex >= 0) focusableElements[currentFocusIndex].classList.remove('gamepad-focus');
+            
+            if (direction === 1) { // Next
+                currentFocusIndex = (currentFocusIndex + 1) % focusableElements.length;
+            } else { // Prev
+                currentFocusIndex = currentFocusIndex <= 0 ? focusableElements.length - 1 : currentFocusIndex - 1;
+            }
+            
+            const target = focusableElements[currentFocusIndex];
+            target.classList.add('gamepad-focus');
+            // 如果在滚动区域，确保可见
+            if (target.scrollIntoViewIfNeeded) target.scrollIntoViewIfNeeded();
+            else target.scrollIntoView({ block: 'nearest' });
+        };
+
+        const activateFocus = () => {
+            if (currentFocusIndex >= 0 && focusableElements[currentFocusIndex]) {
+                focusableElements[currentFocusIndex].click();
+            } else {
+                togglePlay(); // 兜底：A键默认播放/暂停
+            }
+        };
+
+        // 初始化焦点
+        updateFocusContext();
+
+        /** === 键盘映射 === */
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return; // 允许在range上按键，排除文本框
+            switch(e.key.toLowerCase()) {
+                case ' ': case 'enter': e.preventDefault(); activateFocus(); break;
+                case 'a': case 'w': case 'arrowleft': case 'arrowup': e.preventDefault(); moveFocus(-1); break;
+                case 'd': case 's': case 'arrowright': case 'arrowdown': e.preventDefault(); moveFocus(1); break;
+                
+                // 全局热键
+                case 'j': audio.currentTime -= 10; break;
+                case 'k': audio.currentTime += 10; break;
+                case 'i': toggleImmersiveMode(); break;
+                case 'm': toggleShuffle(); break;
+                case 'c': case 'y': toggleColorMode(); break;
+                case 'l': el.btnToggleLrc.click(); break;
+                case 'p': document.getElementById('btnToggleList').click(); break;
+                case 'f': toggleFullscreen(); break;
+                case 'escape': 
+                    if (el.settingsModal.classList.contains('open') || el.playlistModal.classList.contains('open')) closeAllModals();
+                    else if (isImmersiveMode) toggleImmersiveMode();
+                    break;
+            }
+        });
+
+        /** === 手柄映射 === */
+        window.addEventListener("gamepadconnected", () => { gamepadConnected = true; el.padStatus.innerHTML = `🎮 手柄已连接 | 使用摇杆导航`; el.padStatus.style.color = 'var(--primary)'; });
+        window.addEventListener("gamepaddisconnected", () => { gamepadConnected = false; el.padStatus.innerHTML = `⌨️ 等待手柄接入...`; el.padStatus.style.color = 'var(--text-sub)'; });
+        
+        const pollGamepad = () => {
+            if (!gamepadConnected) { requestAnimationFrame(pollGamepad); return; }
+            const pad = navigator.getGamepads()[0];
+            if (pad) {
+                const btns = pad.buttons.map(b => b.pressed);
+                
+                // 1. 核心控制
+                if (btns[0] && !prevPadBtns[0]) activateFocus(); // A: 确认/播放
+                if (btns[1] && !prevPadBtns[1]) { // B: 返回/关闭
+                    if (el.settingsModal.classList.contains('open') || el.playlistModal.classList.contains('open')) closeAllModals();
+                    else if (isImmersiveMode) toggleImmersiveMode();
+                }
+                if (btns[2] && !prevPadBtns[2]) toggleShuffle(); // X: 模式
+                if (btns[3] && !prevPadBtns[3]) toggleColorMode(); // Y: 取色
+                if (btns[4] && !prevPadBtns[4]) goPrev(); // LB: 上一曲
+                if (btns[5] && !prevPadBtns[5]) goNext(); // RB: 下一曲
+                if (btns[8] && !prevPadBtns[8]) toggleFullscreen(); // View: 全屏
+                if (btns[9] && !prevPadBtns[9]) { closeAllModals(); el.settingsModal.classList.add('open'); updateFocusContext(); } // Menu: 设置
+                
+                // 2. 特殊映射 (根据要求调整)
+                if (pad.buttons[6].pressed) adjustVolume(-0.02); // LT: 音量减
+                if (pad.buttons[7].pressed) adjustVolume(0.02);  // RT: 音量加
+                
+                if (btns[12] && !prevPadBtns[12]) document.getElementById('btnToggleList').click(); // 十字 上: 播放列表
+                if (btns[13] && !prevPadBtns[13]) toggleImmersiveMode(); // 十字 下: 沉浸模式
+                
+                if (btns[14] && !prevPadBtns[14]) audio.currentTime -= 10; // 十字 左: 快退
+                if (btns[15] && !prevPadBtns[15]) audio.currentTime += 10; // 十字 右: 快进
+
+                // 3. 摇杆 UI 焦点导航 (防抖)
+                let stickX = pad.axes[0], stickY = pad.axes[1];
+                if (Date.now() - lastNavTime > 200) {
+                    if (stickY < -0.5 || stickX < -0.5) { moveFocus(-1); lastNavTime = Date.now(); } // 上/左
+                    else if (stickY > 0.5 || stickX > 0.5) { moveFocus(1); lastNavTime = Date.now(); } // 下/右
+                }
+                
+                prevPadBtns = btns;
+            } requestAnimationFrame(pollGamepad);
+        };
+        requestAnimationFrame(pollGamepad);
+
+        // 初始化加载
+        window.addEventListener('load', loadSettings);
+
+    </script>
+</body>
+</html>
