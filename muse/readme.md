@@ -4,6 +4,8 @@ muse@MBolka Player Ultimate
     ©MocaBolka 2026, co-created with DeepSeek@Tencent Yuanbao, Gemini 3.1 Pro Preview
 </div>
 
+![muse (5)](https://s1.1ovv.com/2026/04/08/18hG.png)
+
 ### What is this
 完全支持**纯手柄/键盘**操作的本地音乐播放器。
 
@@ -21,6 +23,17 @@ muse@MBolka Player Ultimate
 
 ---
 
+### 屏幕截图
+
+[![muse (1)](https://s1.1ovv.com/2026/04/08/18BV.md.png)](https://cloudimge.com/image/18BV)
+[![muse (2)](https://s1.1ovv.com/2026/04/08/12Xa.md.png)](https://cloudimge.com/image/12Xa)
+[![muse (3)](https://s1.1ovv.com/2026/04/08/12Wp.md.png)](https://cloudimge.com/image/12Wp)
+[![muse (4)](https://s1.1ovv.com/2026/04/08/18V3.md.png)](https://cloudimge.com/image/18V3)
+[![muse (6)](https://s1.1ovv.com/2026/04/08/12SM.md.png)](https://cloudimge.com/image/12SM)
+[![muse (7)](https://s1.1ovv.com/2026/04/08/1874.md.png)](https://cloudimge.com/image/1874)
+
+---
+
 ### 已知问题
 
 鼠标点不了主界面的顶部按键-懒得修
@@ -28,3 +41,8 @@ muse@MBolka Player Ultimate
 沉浸模式下音频频谱无法正常消失-偶现感知不强
 
 设置的进度条无法使用摇杆调节-可以尝试old的ai_studio_code (53).html，有这个功能
+
+---
+### 我需要纯播放器版本！
+请使用old/ai_studio_code (44).html
+
