@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MocaBolka 图片浏览器</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --background-color: #f5f5f5;
+            --text-color: #333;
+            --card-bg: #ffffff;
+            --border-color: #e0e0e0;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            --button-bg: #ffffff;
+            --button-hover: #f0f0f0;
+            --danger-color: #e74c3c;
+            --success-color: #2ecc71;
+            --info-bg: rgba(255, 255, 255, 0.9);
+            --sidebar-width: 320px;
+            --transition: all 0.3s ease;
+        }
+
+        .dark-mode {
+            --primary-color: #5dade2;
+            --background-color: #121212;
+            --text-color: #e0e0e0;
+            --card-bg: #1e1e1e;
+            --border-color: #333;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            --button-bg: #2c2c2c;
+            --button-hover: #3a3a3a;
+            --info-bg: rgba(30, 30, 30, 0.9);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            transition: var(--transition);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 加载动画 */
+        .loader-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--background-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        .loader-text {
+            margin-top: 20px;
+            font-size: 18px;
+            color: var(--text-color);
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 主容器 */
+        .main-container {
+            display: none;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* 图片展示区域 */
+        .image-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+            overflow: hidden;
+            transition: var(--transition);
+        }
+
+        .main-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            transition: transform 0.3s ease;
+        }
+
+        /* 右侧信息栏 */
+        .info-sidebar {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: var(--sidebar-width);
+            height: 100%;
+            background-color: var(--info-bg);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        }
+
+        .info-sidebar.active {
+            transform: translateX(0);
+        }
+
+        .exif-info {
+            margin-top: 20px;
+        }
+
+        .exif-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .exif-label {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        /* 底部按钮 */
+        .bottom-buttons {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            background-color: var(--button-bg);
+            padding: 10px 20px;
+            border-radius: 50px;
+            box-shadow: var(--shadow);
+            z-index: 50;
+            transition: var(--transition);
+        }
+
+        .button {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .button:hover {
+            background-color: var(--button-hover);
+            transform: translateY(-3px);
+        }
+
+        .button.delete:hover {
+            background-color: rgba(231, 76, 60, 0.2);
+            color: var(--danger-color);
+        }
+
+        .button.favorite:hover {
+            background-color: rgba(46, 204, 113, 0.2);
+            color: var(--success-color);
+        }
+
+        .button i {
+            font-size: 20px;
+        }
+
+        /* 左上角历史记录 */
+        .history-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 50;
+        }
+
+        .history-thumb {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            opacity: 0.8;
+            transition: var(--transition);
+        }
+
+        .history-thumb:hover {
+            opacity: 1;
+            transform: scale(1.05);
+        }
+
+        .history-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .settings-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: var(--shadow);
+            z-index: 50;
+        }
+
+        .settings-button:hover {
+            background-color: var(--button-hover);
+            transform: rotate(30deg);
+        }
+
+        /* 左侧设置面板 */
+        .settings-sidebar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: var(--sidebar-width);
+            height: 100%;
+            background-color: var(--info-bg);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        }
+
+        .settings-sidebar.active {
+            transform: translateX(0);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .close-settings {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-color);
+        }
+
+        .settings-option {
+            margin-bottom: 15px;
+        }
+
+        .settings-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+            margin-right: 10px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .about-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            font-style: italic;
+            color: var(--primary-color);
+        }
+
+        /* 平板模式 */
+        .tablet-mode .bottom-buttons {
+            left: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            flex-direction: column;
+        }
+
+        .tablet-mode .button {
+            width: 70px;
+            height: 70px;
+        }
+
+        .tablet-mode .button i {
+            font-size: 24px;
+        }
+
+        /* 删除确认对话框 */
+        .confirmation-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .confirmation-dialog.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .dialog-content {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: var(--shadow);
+        }
+
+        .dialog-title {
+            margin-bottom: 20px;
+            color: var(--danger-color);
+        }
+
+        .dialog-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .dialog-button {
+            padding: 8px 20px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .dialog-button.cancel {
+            background-color: var(--button-bg);
+            color: var(--text-color);
+        }
+
+        .dialog-button.confirm {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .dialog-button:hover {
+            opacity: 0.9;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 768px) {
+            .info-sidebar {
+                width: 100%;
+                height: 40%;
+                top: auto;
+                bottom: 0;
+                transform: translateY(100%);
+            }
+            
+            .info-sidebar.active {
+                transform: translateY(0);
+            }
+            
+            .bottom-buttons {
+                bottom: 10px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- 加载界面 -->
+    <div class="loader-container" id="loader">
+        <div class="loader"></div>
+        <div class="loader-text">正在加载图片库，请稍候...</div>
+        <div class="progress-text" id="progress">扫描文件: 0/70000</div>
+        <div class="time-text" id="time">预计剩余时间: 计算中...</div>
+    </div>
+
+    <!-- 主界面 -->
+    <div class="main-container" id="mainContainer">
+        <!-- 图片展示区域 -->
+        <div class="image-container">
+            <img src="" alt="展示图片" class="main-image" id="mainImage">
+        </div>
+
+        <!-- 右侧信息栏 -->
+        <div class="info-sidebar" id="infoSidebar">
+            <h3>图片信息</h3>
+            <div class="exif-info" id="exifInfo">
+                <!-- EXIF信息将在这里动态生成 -->
+            </div>
+        </div>
+
+        <!-- 底部按钮 -->
+        <div class="bottom-buttons" id="bottomButtons">
+            <button class="button delete" id="deleteButton" title="删除图片">
+                <i class="fas fa-trash"></i>
+            </button>
+            <button class="button" id="openButton" title="在默认应用中打开">
+                <i class="fas fa-external-link-alt"></i>
+            </button>
+            <button class="button" id="explorerButton" title="在文件资源管理器中打开">
+                <i class="fas fa-folder-open"></i>
+            </button>
+            <button class="button favorite" id="favoriteButton" title="收藏图片">
+                <i class="fas fa-star"></i>
+            </button>
+            <button class="button" id="nextButton" title="下一张随机图片">
+                <i class="fas fa-step-forward"></i>
+            </button>
+        </div>
+
+        <!-- 左上角历史记录 -->
+        <div class="history-container" id="historyContainer">
+            <!-- 历史缩略图将在这里动态生成 -->
+        </div>
+
+        <!-- 设置按钮 -->
+        <button class="settings-button" id="settingsButton" title="设置">
+            <i class="fas fa-cog"></i>
+        </button>
+
+        <!-- 左侧设置面板 -->
+        <div class="settings-sidebar" id="settingsSidebar">
+            <div class="settings-header">
+                <h3>设置</h3>
+                <button class="close-settings" id="closeSettings">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="settings-option">
+                <label class="settings-label">
+                    <span class="switch">
+                        <input type="checkbox" id="darkModeToggle">
+                        <span class="slider"></span>
+                    </span>
+                    深色模式
+                </label>
+            </div>
+            
+            <div class="settings-option">
+                <label class="settings-label">
+                    <span class="switch">
+                        <input type="checkbox" id="tabletModeToggle">
+                        <span class="slider"></span>
+                    </span>
+                    平板模式
+                </label>
+            </div>
+            
+            <div class="settings-option">
+                <label class="settings-label">
+                    <span class="switch">
+                        <input type="checkbox" id="exifToggle">
+                        <span class="slider"></span>
+                    </span>
+                    自动显示EXIF信息
+                </label>
+            </div>
+            
+            <div class="about-section">
+                <p>MocaBolka feat. DeepSeek</p>
+                <p>版本 1.0.0</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除确认对话框 -->
+    <div class="confirmation-dialog" id="confirmationDialog">
+        <div class="dialog-content">
+            <h3 class="dialog-title">确认删除</h3>
+            <p>您确定要永久删除这张图片吗？此操作无法撤销。</p>
+            <div class="dialog-buttons">
+                <button class="dialog-button cancel" id="cancelDelete">取消</button>
+                <button class="dialog-button confirm" id="confirmDelete">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 模拟大量图片数据
+        const imageFiles = Array.from({length: 70000}, (_, i) => ({
+            name: `image_${i + 1}.jpg`,
+            path: `/path/to/image_${i + 1}.jpg`,
+            exif: i % 5 === 0 ? null : {
+                manufacturer: i % 3 === 0 ? 'Canon' : i % 3 === 1 ? 'Nikon' : 'Sony',
+                model: `Model ${Math.floor(Math.random() * 1000)}`,
+                aperture: `f/${(Math.random() * 8 + 1).toFixed(1)}`,
+                exposure: `${1/(Math.floor(Math.random() * 2000) + 100)}s`,
+                iso: Math.floor(Math.random() * 6400) + 100,
+                focalLength: `${Math.floor(Math.random() * 200) + 10}mm`,
+                date: new Date(Date.now() - Math.random() * 31536000000).toLocaleDateString()
+            }
+        }));
+
+        // 应用状态
+        const state = {
+            currentImageIndex: -1,
+            history: [],
+            settings: {
+                darkMode: localStorage.getItem('darkMode') === 'true' || false,
+                tabletMode: localStorage.getItem('tabletMode') === 'true' || false,
+                autoShowExif: localStorage.getItem('autoShowExif') !== 'false',
+                lastFolder: localStorage.getItem('lastFolder') || ''
+            },
+            imageCache: new Map(),
+            maxCacheSize: 5
+        };
+
+        // DOM元素
+        const elements = {
+            loader: document.getElementById('loader'),
+            mainContainer: document.getElementById('mainContainer'),
+            mainImage: document.getElementById('mainImage'),
+            infoSidebar: document.getElementById('infoSidebar'),
+            exifInfo: document.getElementById('exifInfo'),
+            bottomButtons: document.getElementById('bottomButtons'),
+            historyContainer: document.getElementById('historyContainer'),
+            settingsButton: document.getElementById('settingsButton'),
+            settingsSidebar: document.getElementById('settingsSidebar'),
+            closeSettings: document.getElementById('closeSettings'),
+            darkModeToggle: document.getElementById('darkModeToggle'),
+            tabletModeToggle: document.getElementById('tabletModeToggle'),
+            exifToggle: document.getElementById('exifToggle'),
+            deleteButton: document.getElementById('deleteButton'),
+            openButton: document.getElementById('openButton'),
+            explorerButton: document.getElementById('explorerButton'),
+            favoriteButton: document.getElementById('favoriteButton'),
+            nextButton: document.getElementById('nextButton'),
+            confirmationDialog: document.getElementById('confirmationDialog'),
+            cancelDelete: document.getElementById('cancelDelete'),
+            confirmDelete: document.getElementById('confirmDelete'),
+            progress: document.getElementById('progress'),
+            time: document.getElementById('time')
+        };
+
+        // 初始化应用
+        function initApp() {
+            // 应用设置
+            applySettings();
+            
+            // 设置事件监听器
+            setupEventListeners();
+            
+            // 模拟加载过程
+            simulateFolderLoading();
+        }
+
+        // 应用设置
+        function applySettings() {
+            // 深色模式
+            if (state.settings.darkMode) {
+                document.body.classList.add('dark-mode');
+            }
+            elements.darkModeToggle.checked = state.settings.darkMode;
+            
+            // 平板模式
+            if (state.settings.tabletMode) {
+                document.body.classList.add('tablet-mode');
+            }
+            elements.tabletModeToggle.checked = state.settings.tabletMode;
+            
+            // EXIF自动显示
+            elements.exifToggle.checked = state.settings.autoShowExif;
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 设置按钮
+            elements.settingsButton.addEventListener('click', () => {
+                elements.settingsSidebar.classList.add('active');
+            });
+            
+            // 关闭设置
+            elements.closeSettings.addEventListener('click', () => {
+                elements.settingsSidebar.classList.remove('active');
+            });
+            
+            // 深色模式切换
+            elements.darkModeToggle.addEventListener('change', (e) => {
+                state.settings.darkMode = e.target.checked;
+                localStorage.setItem('darkMode', state.settings.darkMode);
+                
+                if (state.settings.darkMode) {
+                    document.body.classList.add('dark-mode');
+                } else {
+                    document.body.classList.remove('dark-mode');
+                }
+            });
+            
+            // 平板模式切换
+            elements.tabletModeToggle.addEventListener('change', (e) => {
+                state.settings.tabletMode = e.target.checked;
+                localStorage.setItem('tabletMode', state.settings.tabletMode);
+                
+                if (state.settings.tabletMode) {
+                    document.body.classList.add('tablet-mode');
+                } else {
+                    document.body.classList.remove('tablet-mode');
+                }
+            });
+            
+            // EXIF显示切换
+            elements.exifToggle.addEventListener('change', (e) => {
+                state.settings.autoShowExif = e.target.checked;
+                localStorage.setItem('autoShowExif', state.settings.autoShowExif);
+                
+                if (state.settings.autoShowExif && state.currentImageIndex !== -1) {
+                    const image = imageFiles[state.currentImageIndex];
+                    showExifInfo(image);
+                } else {
+                    hideExifInfo();
+                }
+            });
+            
+            // 删除按钮
+            elements.deleteButton.addEventListener('click', () => {
+                elements.confirmationDialog.classList.add('active');
+            });
+            
+            // 取消删除
+            elements.cancelDelete.addEventListener('click', () => {
+                elements.confirmationDialog.classList.remove('active');
+            });
+            
+            // 确认删除
+            elements.confirmDelete.addEventListener('click', () => {
+                // 在实际应用中，这里会执行删除文件的操作
+                console.log('删除图片:', imageFiles[state.currentImageIndex].name);
+                elements.confirmationDialog.classList.remove('active');
+                showNextImage();
+            });
+            
+            // 打开按钮
+            elements.openButton.addEventListener('click', () => {
+                // 在实际应用中，这里会调用系统默认应用打开图片
+                console.log('打开图片:', imageFiles[state.currentImageIndex].name);
+            });
+            
+            // 资源管理器按钮
+            elements.explorerButton.addEventListener('click', () => {
+                // 在实际应用中，这里会在资源管理器中打开图片所在位置
+                console.log('打开位置:', imageFiles[state.currentImageIndex].path);
+            });
+            
+            // 收藏按钮
+            elements.favoriteButton.addEventListener('click', () => {
+                // 在实际应用中，这里会将图片移动到Collections文件夹
+                console.log('收藏图片:', imageFiles[state.currentImageIndex].name);
+                
+                // 添加视觉反馈
+                elements.favoriteButton.innerHTML = '<i class="fas fa-star" style="color: gold;"></i>';
+                setTimeout(() => {
+                    elements.favoriteButton.innerHTML = '<i class="fas fa-star"></i>';
+                }, 1000);
+            });
+            
+            // 下一张按钮
+            elements.nextButton.addEventListener('click', showNextImage);
+        }
+
+        // 模拟文件夹加载过程
+        function simulateFolderLoading() {
+            let loaded = 0;
+            const total = imageFiles.length;
+            const startTime = Date.now();
+            
+            const interval = setInterval(() => {
+                loaded += Math.floor(Math.random() * 1000) + 500;
+                if (loaded > total) loaded = total;
+                
+                elements.progress.textContent = `扫描文件: ${loaded}/${total}`;
+                
+                // 计算剩余时间
+                const elapsed = (Date.now() - startTime) / 1000;
+                const speed = loaded / elapsed;
+                const remaining = Math.max(0, Math.round((total - loaded) / speed));
+                
+                if (remaining > 0) {
+                    const minutes = Math.floor(remaining / 60);
+                    const seconds = Math.floor(remaining % 60);
+                    elements.time.textContent = `预计剩余时间: ${minutes}分${seconds}秒`;
+                } else {
+                    elements.time.textContent = '正在完成...';
+                }
+                
+                if (loaded >= total) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        elements.loader.style.display = 'none';
+                        elements.mainContainer.style.display = 'block';
+                        showNextImage();
+                    }, 500);
+                }
+            }, 100);
+        }
+
+        // 显示下一张随机图片
+        function showNextImage() {
+            // 更新历史记录（保留最近3张）
+            if (state.currentImageIndex !== -1) {
+                state.history.unshift(state.currentImageIndex);
+                if (state.history.length > 3) {
+                    state.history.pop();
+                }
+                updateHistory();
+            }
+            
+            // 获取新的随机图片索引
+            let newIndex;
+            do {
+                newIndex = Math.floor(Math.random() * imageFiles.length);
+            } while (newIndex === state.currentImageIndex && imageFiles.length > 1);
+            
+            state.currentImageIndex = newIndex;
+            const image = imageFiles[newIndex];
+            
+            // 更新缓存
+            updateCache(newIndex);
+            
+            // 显示图片
+            displayImage(image);
+            
+            // 显示EXIF信息（如果有）
+            if (image.exif && state.settings.autoShowExif) {
+                showExifInfo(image);
+            } else {
+                hideExifInfo();
+            }
+            
+            // 重置收藏按钮状态
+            elements.favoriteButton.innerHTML = '<i class="fas fa-star"></i>';
+        }
+
+        // 更新缓存
+        function updateCache(newIndex) {
+            // 添加新图片到缓存
+            state.imageCache.set(newIndex, true);
+            
+            // 添加历史图片到缓存
+            state.history.forEach(index => {
+                state.imageCache.set(index, true);
+            });
+            
+            // 清理超出限制的缓存
+            if (state.imageCache.size > state.maxCacheSize) {
+                // 找到最旧的缓存项（非当前和历史）
+                let oldestKey = null;
+                state.imageCache.forEach((_, key) => {
+                    if (key !== state.currentImageIndex && !state.history.includes(key)) {
+                        if (oldestKey === null || key < oldestKey) {
+                            oldestKey = key;
+                        }
+                    }
+                });
+                
+                if (oldestKey !== null) {
+                    state.imageCache.delete(oldestKey);
+                    console.log(`从缓存中移除图片: ${oldestKey}`);
+                }
+            }
+        }
+
+        // 显示图片
+        function displayImage(image) {
+            // 在实际应用中，这里会从文件系统加载图片
+            // 这里使用随机图片URL代替
+            const randomImageId = Math.floor(Math.random() * 1000);
+            elements.mainImage.src = `https://picsum.photos/1920/1080?random=${randomImageId}`;
+            elements.mainImage.alt = image.name;
+        }
+
+        // 显示EXIF信息
+        function showExifInfo(image) {
+            if (!image.exif) return;
+            
+            elements.exifInfo.innerHTML = '';
+            
+            const exifData = [
+                {label: '制造商', value: image.exif.manufacturer},
+                {label: '型号', value: image.exif.model},
+                {label: '光圈值', value: image.exif.aperture},
+                {label: '曝光时间', value: image.exif.exposure},
+                {label: 'ISO速度', value: image.exif.iso},
+                {label: '焦距', value: image.exif.focalLength},
+                {label: '拍摄日期', value: image.exif.date}
+            ];
+            
+            exifData.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'exif-item';
+                div.innerHTML = `
+                    <span class="exif-label">${item.label}:</span>
+                    <span>${item.value}</span>
+                `;
+                elements.exifInfo.appendChild(div);
+            });
+            
+            elements.infoSidebar.classList.add('active');
+        }
+
+        // 隐藏EXIF信息
+        function hideExifInfo() {
+            elements.infoSidebar.classList.remove('active');
+        }
+
+        // 更新历史记录显示
+        function updateHistory() {
+            elements.historyContainer.innerHTML = '';
+            
+            state.history.forEach(index => {
+                const image = imageFiles[index];
+                const thumb = document.createElement('div');
+                thumb.className = 'history-thumb';
+                thumb.innerHTML = `<img src="https://picsum.photos/100/100?random=${index}" alt="${image.name}">`;
+                thumb.addEventListener('click', () => {
+                    // 在实际应用中，这里会显示选中的历史图片
+                    console.log('显示历史图片:', image.name);
+                });
+                elements.historyContainer.appendChild(thumb);
+            });
+        }
+
+        // 初始化应用
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>

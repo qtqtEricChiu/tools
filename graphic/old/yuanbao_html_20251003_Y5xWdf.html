@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地图片浏览器 v1.8.0.7</title>
+    <style>
+        :root {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --accent-color: #4a8cff;
+            --border-color: #333333;
+            --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            --transition: all 0.3s ease;
+            --font-main: "OPPO Sans 4.0", -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-primary: #f5f5f5;
+                --bg-secondary: #ffffff;
+                --text-primary: #333333;
+                --text-secondary: #666666;
+                --border-color: #e0e0e0;
+                --card-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(100, 100, 100, 0.1);
+            border-radius: 10px;
+            transition: var(--transition);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(150, 150, 150, 0.5);
+            border-radius: 10px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            transition: var(--transition);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(180, 180, 180, 0.7);
+        }
+
+        /* 授权界面 */
+        .auth-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        .auth-container.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .auth-content {
+            background-color: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 800px;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .auth-main {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+        }
+
+        .auth-left {
+            flex: 1;
+        }
+
+        .auth-right {
+            flex: 1;
+            text-align: left;
+        }
+
+        .auth-content h1 {
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .auth-content p {
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .auth-btn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: var(--transition);
+            font-weight: 500;
+        }
+
+        .auth-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        .authorized-folders {
+            margin-top: 20px;
+        }
+
+        .folders-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 15px;
+            color: var(--text-primary);
+        }
+
+        .folder-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .folder-item {
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .folder-item:last-child {
+            border-bottom: none;
+        }
+
+        .folder-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        /* 加载动画 */
+        .loading-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-container.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        .loading-text {
+            color: white;
+            font-size: 18px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 主界面布局 */
+        .main-container {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            grid-template-areas:
+                "header header"
+                "history main"
+                "footer footer";
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .main-container.show {
+            opacity: 1;
+        }
+
+        /* 顶部标题栏 */
+        .header {
+            grid-area: header;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            z-index: 10;
+        }
+
+        .file-info {
+            display: flex;
+            flex-direction: column;
+            max-width: 70%;
+        }
+
+        .file-name {
+            font-size: 18px;
+            font-weight: 500;
+            position: relative;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .file-name.long::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 40px;
+            background: linear-gradient(90deg, transparent, var(--bg-secondary));
+        }
+
+        .file-modified {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .fullscreen-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 24px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            transition: var(--transition);
+        }
+
+        .fullscreen-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* 左侧历史记录 */
+        .history-panel {
+            grid-area: history;
+            width: 100px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-right: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            z-index: 5;
+        }
+
+        .history-title {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .history-item {
+            width: 70px;
+            height: 70px;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            cursor: pointer;
+            position: relative;
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+        }
+
+        .history-item:hover {
+            transform: scale(1.05);
+            border-color: var(--accent-color);
+        }
+
+        .history-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .settings-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            margin-top: auto;
+            transition: var(--transition);
+        }
+
+        .settings-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .settings-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-primary);
+        }
+
+        /* 主图片区域 */
+        .main-content {
+            grid-area: main;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            padding-bottom: 80px;
+        }
+
+        .tablet-mode .main-content {
+            padding-bottom: 0;
+        }
+
+        .image-container {
+            position: relative;
+            max-width: 100%;
+            max-height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .main-image {
+            max-width: 100%;
+            max-height: calc(100vh - 160px);
+            object-fit: contain;
+            transition: opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .main-image.show {
+            opacity: 1;
+        }
+
+        .blur-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px) brightness(0.5);
+            opacity: 0;
+            z-index: -1;
+            transition: opacity 0.3s ease;
+        }
+
+        .blur-background.show {
+            opacity: 0.7;
+        }
+
+        .scrollable-image {
+            max-height: calc(100vh - 160px);
+            overflow: hidden;
+        }
+
+        .tablet-mode .scrollable-image {
+            max-height: 100vh;
+        }
+
+        /* 底部操作栏 */
+        .footer {
+            grid-area: footer;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            z-index: 10;
+            position: fixed;
+            bottom: 0;
+            left: 100px;
+            right: 0;
+            height: 80px;
+        }
+
+        .tablet-mode .footer {
+            display: none;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .action-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .action-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .action-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-primary);
+        }
+
+        /* 自定义按钮 */
+        .custom-action-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .custom-action-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .custom-action-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-primary);
+        }
+
+        /* 平板模式浮动按钮 */
+        .tablet-action-buttons {
+            position: fixed;
+            right: 24px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            flex-direction: column;
+            gap: 16px;
+            z-index: 50;
+            opacity: 0;
+            transform: translateY(-50%) translateX(20px);
+            transition: var(--transition);
+        }
+
+        .tablet-mode .tablet-action-buttons {
+            display: flex;
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+        }
+
+        .tablet-action-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: var(--card-shadow);
+        }
+
+        .tablet-action-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .tablet-action-btn svg {
+            width: 28px;
+            height: 28px;
+            fill: var(--text-primary);
+        }
+
+        /* 自定义平板模式按钮 */
+        .tablet-custom-action-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: var(--card-shadow);
+        }
+
+        .tablet-custom-action-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .tablet-custom-action-btn svg {
+            width: 28px;
+            height: 28px;
+            fill: var(--text-primary);
+        }
+
+        /* 设置面板 */
+        .settings-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 320px;
+            height: 100%;
+            background-color: var(--bg-secondary);
+            z-index: 20;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            padding: 24px;
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+        }
+
+        .settings-panel.open {
+            transform: translateX(0);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .settings-title {
+            font-size: 20px;
+            font-weight: 500;
+        }
+
+        .close-settings {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 24px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            transition: var(--transition);
+        }
+
+        .close-settings:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .settings-group {
+            margin-bottom: 24px;
+        }
+
+        .settings-group-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .setting-label {
+            font-size: 14px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        .custom-path-input {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            padding: 6px 8px;
+            font-size: 14px;
+            width: 120px;
+        }
+
+        .about-section {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .version {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        /* 计数显示 */
+        .count-display {
+            position: fixed;
+            right: 20px;
+            bottom: 100px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 30;
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
+        }
+
+        .checkered-flag-mode .count-display {
+            display: none;
+        }
+
+        /* Toast通知 */
+        .toast-container {
+            position: fixed;
+            left: 50%;
+            top: 20px;
+            transform: translateX(-50%) translateY(-100px);
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+        }
+
+        .toast-container.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: all;
+        }
+
+        .toast-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toast-message {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .toast-undo {
+            color: var(--accent-color);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: var(--transition);
+        }
+
+        .toast-undo:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* 设置面板遮罩 */
+        .settings-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            z-index: 15;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .settings-panel.open + .settings-overlay {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* 热键提示 */
+        .hotkey-info {
+            margin-top: 20px;
+            padding: 16px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .hotkey-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .hotkey-item:last-child {
+            border-bottom: none;
+        }
+
+        .hotkey-label {
+            color: var(--text-secondary);
+        }
+
+        .hotkey-value {
+            font-weight: 500;
+        }
+
+        /* CheckeredFlag模式下的历史记录隐藏 */
+        .checkered-flag-mode .history-title,
+        .checkered-flag-mode .history-item {
+            display: none !important;
+        }
+
+        /* 平板模式图片适配 */
+        .tablet-mode .image-container {
+            padding: 20px;
+        }
+
+        .tablet-mode .main-image {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <!-- 授权界面 -->
+    <div class="auth-container" id="authContainer">
+        <div class="auth-content">
+            <h1>授权访问本地图片</h1>
+            <div class="auth-main">
+                <div class="auth-left">
+                    <p>为了浏览您的本地图片，请授权访问您的图片文件夹。我们承诺仅读取图像文件，不会访问其他文件类型。</p>
+                    <button class="auth-btn" id="authBtn">授权文件夹</button>
+                </div>
+                <div class="auth-right">
+                    <div class="authorized-folders">
+                        <div class="folders-title">已有访问权限的文件夹</div>
+                        <div class="folder-list" id="folderList">
+                            <!-- 已授权文件夹列表将在这里动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载动画 -->
+    <div class="loading-container" id="loadingContainer">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在加载图片文件...</div>
+    </div>
+
+    <!-- Toast通知 -->
+    <div class="toast-container" id="toastContainer">
+        <div class="toast-icon" id="toastIcon"></div>
+        <div class="toast-message" id="toastMessage"></div>
+        <button class="toast-undo" id="toastUndo">撤销</button>
+    </div>
+
+    <!-- 计数显示 -->
+    <div class="count-display" id="countDisplay">浏览次数: 0</div>
+
+    <!-- 主界面 -->
+    <div class="main-container" id="mainContainer">
+        <!-- 顶部标题栏 -->
+        <header class="header">
+            <div class="file-info">
+                <div class="file-name" id="fileName">未选择图片</div>
+                <div class="file-modified" id="fileModified">最后修改时间: --</div>
+            </div>
+            <button class="fullscreen-btn" id="fullscreenBtn" title="切换全屏">
+                <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                </svg>
+            </button>
+        </header>
+
+        <!-- 左侧历史记录 -->
+        <div class="history-panel">
+            <div class="history-title">最近浏览</div>
+            <div class="history-item" id="historyItem1"></div>
+            <div class="history-item" id="historyItem2"></div>
+            <div class="history-item" id="historyItem3"></div>
+            <div class="settings-btn" id="settingsBtn">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                </svg>
+            </div>
+        </div>
+
+        <!-- 主图片区域 -->
+        <main class="main-content">
+            <div class="image-container">
+                <div class="blur-background" id="blurBackground"></div>
+                <div class="scrollable-image" id="scrollableImage">
+                    <!-- 图片将动态插入这里 -->
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部操作栏 -->
+        <footer class="footer">
+            <div class="action-buttons">
+                <button class="action-btn" id="deleteBtn" title="删除图片">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                </button>
+                <button class="action-btn" id="viewLargeBtn" title="查看大图">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                </button>
+                <button class="action-btn" id="favoriteBtn" title="收藏图片">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                </button>
+                <!-- 自定义按钮区域 -->
+                <div id="customButtonsContainer"></div>
+                <button class="action-btn" id="nextBtn" title="下一张图片">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M5.88 4.12L13.76 12l-7.88 7.88L8 22l10-10L8 2z"/>
+                    </svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 平板模式浮动按钮 -->
+    <div class="tablet-action-buttons" id="tabletActionButtons">
+        <button class="tablet-action-btn" id="tabletDeleteBtn" title="删除图片">
+            <svg viewBox="0 0 24 24">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+            </svg>
+        </button>
+        <button class="tablet-action-btn" id="tabletViewLargeBtn" title="查看大图">
+            <svg viewBox="0 0 24 24">
+                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+            </svg>
+        </button>
+        <button class="tablet-action-btn" id="tabletFavoriteBtn" title="收藏图片">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+        </button>
+        <!-- 平板模式自定义按钮区域 -->
+        <div id="tabletCustomButtonsContainer"></div>
+        <button class="tablet-action-btn" id="tabletNextBtn" title="下一张图片">
+            <svg viewBox="0 0 24 24">
+                <path d="M5.88 4.12L13.76 12l-7.88 7.88L8 22l10-10L8 2z"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+            <div class="settings-title">设置</div>
+            <button class="close-settings" id="closeSettingsBtn">×</button>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">显示设置</div>
+            <div class="setting-item">
+                <span class="setting-label">平板模式</span>
+                <label class="switch">
+                    <input type="checkbox" id="tabletModeToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">文件夹设置</div>
+            <div class="setting-item">
+                <span class="setting-label">当前文件夹</span>
+                <span class="setting-value" id="currentFolder">未选择</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">读取子文件夹</span>
+                <label class="switch">
+                    <input type="checkbox" id="subfoldersToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <button class="auth-btn" id="changeFolderBtn" style="width:100%;margin-top:12px;">更改文件夹</button>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">自定义保存路径</div>
+            <div class="setting-item">
+                <span class="setting-label">启用路径1</span>
+                <label class="switch">
+                    <input type="checkbox" id="customPath1Toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">路径1名称</span>
+                <input type="text" class="custom-path-input" id="customPath1Input" value="Out1" placeholder="文件夹名称">
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">启用路径2</span>
+                <label class="switch">
+                    <input type="checkbox" id="customPath2Toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">路径2名称</span>
+                <input type="text" class="custom-path-input" id="customPath2Input" value="Out2" placeholder="文件夹名称">
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">启用路径3</span>
+                <label class="switch">
+                    <input type="checkbox" id="customPath3Toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">路径3名称</span>
+                <input type="text" class="custom-path-input" id="customPath3Input" value="Out3" placeholder="文件夹名称">
+            </div>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">下一张按钮设置</div>
+            <div class="setting-item">
+                <span class="setting-label">移动到CheckeredFlag文件夹</span>
+                <label class="switch">
+                    <input type="checkbox" id="checkeredFlagToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="hotkey-info">
+            <div class="settings-group-title">热键提示</div>
+            <div class="hotkey-item">
+                <span class="hotkey-label">下一张图片</span>
+                <span class="hotkey-value">→</span>
+            </div>
+            <div class="hotkey-item">
+                <span class="hotkey-label">查看大图</span>
+                <span class="hotkey-value">空格</span>
+            </div>
+            <div class="hotkey-item">
+                <span class="hotkey-label">删除图片</span>
+                <span class="hotkey-value">Delete</span>
+            </div>
+            <div class="hotkey-item">
+                <span class="hotkey-label">收藏图片</span>
+                <span class="hotkey-value">A</span>
+            </div>
+            <div class="hotkey-item">
+                <span class="hotkey-label">撤销操作</span>
+                <span class="hotkey-value">Z</span>
+            </div>
+            <div class="hotkey-item">
+                <span class="hotkey-label">全屏切换</span>
+                <span class="hotkey-value">F11</span>
+            </div>
+        </div>
+        
+        <div class="about-section">
+            <div>MocaBolka</div>
+            <div style="margin: 8px 0; font-size: 18px;">×</div>
+            <div>腾讯元宝 feat. DeepSeek</div>
+            <div style="margin: 8px 0; font-size: 18px;">×</div>
+            <div>Google Gemini</div>
+            <div class="version">版本 1.8.0.7</div>
+        </div>
+    </div>
+
+    <!-- 设置面板遮罩 -->
+    <div class="settings-overlay" id="settingsOverlay"></div>
+
+    <script>
+        // 全局变量
+        let directoryHandle;
+        let imageFiles = [];
+        let currentImageIndex = -1;
+        let historyImages = [];
+        const MAX_HISTORY = 3;
+        const MAX_CACHE = 5;
+        let imageCache = new Map();
+        let settings = {
+            tabletMode: false,
+            includeSubfolders: true,
+            fileNameMaxLength: 75,
+            customPaths: {
+                path1: { enabled: false, name: "Out1" },
+                path2: { enabled: false, name: "Out2" },
+                path3: { enabled: false, name: "Out3" }
+            },
+            checkeredFlagMode: false
+        };
+        let lastAction = null;
+        let toastTimeout;
+        let imageCounts = {};
+
+        // DOM元素
+        const authContainer = document.getElementById('authContainer');
+        const authBtn = document.getElementById('authBtn');
+        const loadingContainer = document.getElementById('loadingContainer');
+        const mainContainer = document.getElementById('mainContainer');
+        const fileName = document.getElementById('fileName');
+        const fileModified = document.getElementById('fileModified');
+        const historyItem1 = document.getElementById('historyItem1');
+        const historyItem2 = document.getElementById('historyItem2');
+        const historyItem3 = document.getElementById('historyItem3');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const blurBackground = document.getElementById('blurBackground');
+        const scrollableImage = document.getElementById('scrollableImage');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const viewLargeBtn = document.getElementById('viewLargeBtn');
+        const favoriteBtn = document.getElementById('favoriteBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        const tabletModeToggle = document.getElementById('tabletModeToggle');
+        const subfoldersToggle = document.getElementById('subfoldersToggle');
+        const currentFolder = document.getElementById('currentFolder');
+        const changeFolderBtn = document.getElementById('changeFolderBtn');
+        const toastContainer = document.getElementById('toastContainer');
+        const toastIcon = document.getElementById('toastIcon');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastUndo = document.getElementById('toastUndo');
+        const tabletActionButtons = document.getElementById('tabletActionButtons');
+        const tabletDeleteBtn = document.getElementById('tabletDeleteBtn');
+        const tabletViewLargeBtn = document.getElementById('tabletViewLargeBtn');
+        const tabletFavoriteBtn = document.getElementById('tabletFavoriteBtn');
+        const tabletNextBtn = document.getElementById('tabletNextBtn');
+        const settingsOverlay = document.getElementById('settingsOverlay');
+        const folderList = document.getElementById('folderList');
+        const countDisplay = document.getElementById('countDisplay');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const customButtonsContainer = document.getElementById('customButtonsContainer');
+        const tabletCustomButtonsContainer = document.getElementById('tabletCustomButtonsContainer');
+        const customPath1Toggle = document.getElementById('customPath1Toggle');
+        const customPath2Toggle = document.getElementById('customPath2Toggle');
+        const customPath3Toggle = document.getElementById('customPath3Toggle');
+        const customPath1Input = document.getElementById('customPath1Input');
+        const customPath2Input = document.getElementById('customPath2Input');
+        const customPath3Input = document.getElementById('customPath3Input');
+        const checkeredFlagToggle = document.getElementById('checkeredFlagToggle');
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            checkSavedDirectory();
+            loadAuthorizedFolders();
+            loadImageCounts();
+            setupEventListeners();
+            setupKeyboardShortcuts();
+            updateCustomButtons();
+        });
+
+        // 检查保存的目录
+        async function checkSavedDirectory() {
+            const savedDirHandleId = localStorage.getItem('directoryHandleId');
+            if (savedDirHandleId) {
+                try {
+                    directoryHandle = await window.showDirectoryPicker({
+                        id: savedDirHandleId,
+                        mode: 'readwrite'
+                    });
+                    startLoadingImages();
+                } catch (error) {
+                    console.error('无法恢复保存的目录:', error);
+                    localStorage.removeItem('directoryHandleId');
+                }
+            }
+        }
+
+        // 加载已授权文件夹列表
+        function loadAuthorizedFolders() {
+            const authorizedFolders = JSON.parse(localStorage.getItem('authorizedFolders') || '[]');
+            folderList.innerHTML = '';
+            
+            if (authorizedFolders.length === 0) {
+                folderList.innerHTML = '<div class="folder-item">暂无已授权文件夹</div>';
+                return;
+            }
+            
+            authorizedFolders.forEach(folder => {
+                const folderItem = document.createElement('div');
+                folderItem.className = 'folder-item';
+                folderItem.textContent = folder.name;
+                folderItem.addEventListener('click', () => {
+                    loadFolderById(folder.id);
+                });
+                folderList.appendChild(folderItem);
+            });
+        }
+
+        // 通过ID加载文件夹
+        async function loadFolderById(id) {
+            try {
+                directoryHandle = await window.showDirectoryPicker({
+                    id: id,
+                    mode: 'readwrite'
+                });
+                startLoadingImages();
+            } catch (error) {
+                console.error('加载文件夹失败:', error);
+                alert('无法访问该文件夹: ' + error.message);
+            }
+        }
+
+        // 保存已授权文件夹
+        function saveAuthorizedFolder(handle) {
+            const authorizedFolders = JSON.parse(localStorage.getItem('authorizedFolders') || '[]');
+            
+            const exists = authorizedFolders.some(folder => folder.id === handle.id);
+            if (!exists) {
+                authorizedFolders.push({
+                    id: handle.id,
+                    name: handle.name
+                });
+                localStorage.setItem('authorizedFolders', JSON.stringify(authorizedFolders));
+                loadAuthorizedFolders();
+            }
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            authBtn.addEventListener('click', async () => {
+                try {
+                    directoryHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite'
+                    });
+                    localStorage.setItem('directoryHandleId', directoryHandle.id);
+                    saveAuthorizedFolder(directoryHandle);
+                    startLoadingImages();
+                } catch (error) {
+                    console.error('目录授权失败:', error);
+                }
+            });
+
+            nextBtn.addEventListener('click', handleNextButtonClick);
+            deleteBtn.addEventListener('click', deleteCurrentImage);
+            viewLargeBtn.addEventListener('click', viewLargeImage);
+            favoriteBtn.addEventListener('click', addToFavorites);
+            
+            tabletDeleteBtn.addEventListener('click', deleteCurrentImage);
+            tabletViewLargeBtn.addEventListener('click', viewLargeImage);
+            tabletFavoriteBtn.addEventListener('click', addToFavorites);
+            tabletNextBtn.addEventListener('click', handleNextButtonClick);
+            
+            historyItem1.addEventListener('click', () => navigateHistory(0));
+            historyItem2.addEventListener('click', () => navigateHistory(1));
+            historyItem3.addEventListener('click', () => navigateHistory(2));
+            
+            settingsBtn.addEventListener('click', () => settingsPanel.classList.add('open'));
+            closeSettingsBtn.addEventListener('click', () => settingsPanel.classList.remove('open'));
+            settingsOverlay.addEventListener('click', () => settingsPanel.classList.remove('open'));
+            
+            tabletModeToggle.addEventListener('change', () => {
+                settings.tabletMode = tabletModeToggle.checked;
+                saveSettings();
+                applyTabletMode();
+            });
+            
+            subfoldersToggle.addEventListener('change', () => {
+                settings.includeSubfolders = subfoldersToggle.checked;
+                saveSettings();
+                if (directoryHandle) {
+                    startLoadingImages();
+                }
+            });
+            
+            changeFolderBtn.addEventListener('click', async () => {
+                try {
+                    directoryHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite'
+                    });
+                    localStorage.setItem('directoryHandleId', directoryHandle.id);
+                    saveAuthorizedFolder(directoryHandle);
+                    startLoadingImages();
+                } catch (error) {
+                    console.error('目录授权失败:', error);
+                }
+            });
+            
+            toastUndo.addEventListener('click', undoLastAction);
+            
+            fullscreenBtn.addEventListener('click', toggleFullscreen);
+            
+            // 自定义路径设置监听
+            customPath1Toggle.addEventListener('change', () => {
+                settings.customPaths.path1.enabled = customPath1Toggle.checked;
+                saveSettings();
+                updateCustomButtons();
+            });
+            
+            customPath2Toggle.addEventListener('change', () => {
+                settings.customPaths.path2.enabled = customPath2Toggle.checked;
+                saveSettings();
+                updateCustomButtons();
+            });
+            
+            customPath3Toggle.addEventListener('change', () => {
+                settings.customPaths.path3.enabled = customPath3Toggle.checked;
+                saveSettings();
+                updateCustomButtons();
+            });
+            
+            customPath1Input.addEventListener('change', () => {
+                settings.customPaths.path1.name = customPath1Input.value || "Out1";
+                saveSettings();
+                updateCustomButtons();
+            });
+            
+            customPath2Input.addEventListener('change', () => {
+                settings.customPaths.path2.name = customPath2Input.value || "Out2";
+                saveSettings();
+                updateCustomButtons();
+            });
+            
+            customPath3Input.addEventListener('change', () => {
+                settings.customPaths.path3.name = customPath3Input.value || "Out3";
+                saveSettings();
+                updateCustomButtons();
+            });
+            
+            checkeredFlagToggle.addEventListener('change', () => {
+                settings.checkeredFlagMode = checkeredFlagToggle.checked;
+                saveSettings();
+                applyCheckeredFlagMode();
+            });
+        }
+
+        // 处理下一张按钮点击
+        function handleNextButtonClick() {
+            if (settings.checkeredFlagMode) {
+                moveToCheckeredFlag();
+            } else {
+                showNextImage();
+            }
+        }
+
+        // 更新自定义按钮
+        function updateCustomButtons() {
+            customButtonsContainer.innerHTML = '';
+            tabletCustomButtonsContainer.innerHTML = '';
+            
+            if (settings.customPaths.path1.enabled) {
+                createCustomButton(1, settings.customPaths.path1.name);
+            }
+            
+            if (settings.customPaths.path2.enabled) {
+                createCustomButton(2, settings.customPaths.path2.name);
+            }
+            
+            if (settings.customPaths.path3.enabled) {
+                createCustomButton(3, settings.customPaths.path3.name);
+            }
+        }
+
+        // 创建自定义按钮
+        function createCustomButton(index, name) {
+            const button = document.createElement('button');
+            button.className = 'custom-action-btn';
+            button.title = `保存到${name}`;
+            button.innerHTML = `
+                <svg viewBox="0 0 24 24">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+            `;
+            button.addEventListener('click', () => moveToCustomFolder(index, name));
+            customButtonsContainer.appendChild(button);
+            
+            const tabletButton = document.createElement('button');
+            tabletButton.className = 'tablet-custom-action-btn';
+            tabletButton.title = `保存到${name}`;
+            tabletButton.innerHTML = `
+                <svg viewBox="0 0 24 24">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+            `;
+            tabletButton.addEventListener('click', () => moveToCustomFolder(index, name));
+            tabletCustomButtonsContainer.appendChild(tabletButton);
+        }
+
+        // 移动到自定义文件夹
+        async function moveToCustomFolder(index, folderName) {
+            if (currentImageIndex < 0) return;
+            
+            try {
+                const imageInfo = imageFiles[currentImageIndex];
+                const targetHandle = await directoryHandle.getDirectoryHandle(folderName, { create: true });
+                
+                const sourceHandle = imageInfo.handle;
+                const source = await sourceHandle.getFile();
+                const newFileHandle = await targetHandle.getFileHandle(imageInfo.name, { create: true });
+                const writable = await newFileHandle.createWritable();
+                await writable.write(source);
+                await writable.close();
+                
+                await directoryHandle.removeEntry(imageInfo.name, { recursive: false });
+                
+                lastAction = {
+                    type: 'custom',
+                    index: currentImageIndex,
+                    info: imageInfo,
+                    targetFolder: folderName
+                };
+                
+                imageFiles.splice(currentImageIndex, 1);
+                
+                const historyIndex = historyImages.findIndex(h => h.name === imageInfo.name);
+                if (historyIndex > -1) historyImages.splice(historyIndex, 1);
+                
+                showToast('custom', `图片已保存到${folderName}`);
+                
+                if (imageFiles.length > 0) {
+                    showNextImage();
+                } else {
+                    alert('文件夹中没有更多图片');
+                }
+            } catch (error) {
+                console.error('保存到自定义文件夹失败:', error);
+                alert('保存到自定义文件夹失败: ' + error.message);
+            }
+        }
+
+        // 设置键盘快捷键
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if (document.activeElement.tagName === 'INPUT') return;
+                
+                switch (e.key) {
+                    case 'ArrowRight':
+                        handleNextButtonClick();
+                        break;
+                    case ' ':
+                        viewLargeImage();
+                        break;
+                    case 'Delete':
+                        deleteCurrentImage();
+                        break;
+                    case 'a':
+                    case 'A':
+                        addToFavorites();
+                        break;
+                    case 'z':
+                    case 'Z':
+                        undoLastAction();
+                        break;
+                    case 'F11':
+                        e.preventDefault();
+                        toggleFullscreen();
+                        break;
+                }
+            });
+        }
+
+        // 切换全屏
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.error('全屏请求失败:', err);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        // 开始加载图片
+        async function startLoadingImages() {
+            authContainer.classList.add('hidden');
+            loadingContainer.classList.add('show');
+            
+            try {
+                imageFiles = await getAllImageFiles(directoryHandle);
+                currentFolder.textContent = directoryHandle.name;
+                
+                if (imageFiles.length > 0) {
+                    showNextImage();
+                    mainContainer.classList.add('show');
+                } else {
+                    alert('文件夹中没有找到图片文件');
+                }
+            } catch (error) {
+                console.error('加载图片失败:', error);
+                alert('加载图片失败: ' + error.message);
+            } finally {
+                loadingContainer.classList.remove('show');
+            }
+        }
+
+        // 获取所有图片文件
+        async function getAllImageFiles(dirHandle) {
+            const files = [];
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/heic', 'image/heif'];
+            const excludedFolders = ['.MediaTrash', 'Collections', 'CheckeredFlag', 
+                           settings.customPaths.path1.name, 
+                           settings.customPaths.path2.name, 
+                           settings.customPaths.path3.name];
+
+            async function processDirectory(handle) {
+                for await (const entry of handle.values()) {
+                    if (entry.kind === 'file') {
+                        const file = await entry.getFile();
+                        if (allowedTypes.includes(file.type)) {
+                            files.push({
+                                handle: entry,
+                                name: file.name,
+                                lastModified: file.lastModified
+                            });
+                        }
+                    } else if (entry.kind === 'directory' && settings.includeSubfolders && !excludedFolders.includes(entry.name)) {
+                        await processDirectory(entry);
+                    }
+                }
+            }
+
+            await processDirectory(dirHandle);
+            return files;
+        }
+
+        // 显示下一张图片
+        async function showNextImage() {
+            if (imageFiles.length === 0) return;
+
+            let newIndex;
+            do {
+                newIndex = Math.floor(Math.random() * imageFiles.length);
+            } while (newIndex === currentImageIndex && imageFiles.length > 1);
+
+            currentImageIndex = newIndex;
+            const imageInfo = imageFiles[current

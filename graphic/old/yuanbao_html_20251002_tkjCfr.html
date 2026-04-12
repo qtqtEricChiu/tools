@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地图片浏览器</title>
+    <!-- 使用CDN加载EXIF.js库 -->
+    <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --button-bg: #f0f0f0;
+            --button-hover: #e0e0e0;
+            --sidebar-bg: rgba(255, 255, 255, 0.85);
+            --border-color: #ddd;
+            --overlay-bg: rgba(0, 0, 0, 0.5);
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #121212;
+            --text-color: #ffffff;
+            --button-bg: #333333;
+            --button-hover: #444444;
+            --sidebar-bg: rgba(30, 30, 30, 0.85);
+            --border-color: #444;
+            --overlay-bg: rgba(0, 0, 0, 0.7);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* 授权界面样式 */
+        #authorization {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            padding: 20px;
+            text-align: center;
+        }
+
+        #authorization h1 {
+            margin-bottom: 20px;
+            font-size: 2rem;
+        }
+
+        #authorization p {
+            margin-bottom: 30px;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+
+        #folder-input {
+            display: none;
+        }
+
+        .btn {
+            background-color: var(--button-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.2s;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            background-color: var(--button-hover);
+        }
+
+        /* 加载动画 */
+        .loader {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 主界面样式 */
+        #main-container {
+            display: none;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* 高斯模糊背景 */
+        .blur-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px);
+            opacity: 0.5;
+            z-index: -1;
+        }
+
+        /* 主图片容器 */
+        .image-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: calc(100vh - 120px);
+            padding: 20px;
+            position: relative;
+        }
+
+        .main-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        /* 顶部文件信息 */
+        .file-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: var(--overlay-bg);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            max-width: 80%;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .filename {
+            display: inline-block;
+            max-width: 50ch;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            position: relative;
+        }
+
+        .filename::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 30px;
+            background: linear-gradient(to right, transparent, var(--overlay-bg));
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 300px;
+            background-color: transparent;
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 20;
+        }
+
+        .sidebar.active {
+            transform: translateX(0);
+        }
+
+        .sidebar-content {
+            background-color: var(--sidebar-bg);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        .sidebar h3 {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .exif-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .exif-item {
+            margin-bottom: 10px;
+        }
+
+        .exif-label {
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        .exif-value {
+            font-size: 0.9rem;
+        }
+
+        .close-sidebar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-color);
+        }
+
+        /* 底部按钮 */
+        .button-bar {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 10;
+            padding: 10px;
+            background-color: var(--sidebar-bg);
+            border-radius: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        .button {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: var(--button-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            color: var(--text-color);
+        }
+
+        .button:hover {
+            background-color: var(--button-hover);
+            transform: scale(1.1);
+        }
+
+        .button i {
+            font-size: 24px;
+        }
+
+        /* 左上角历史记录 */
+        .history-sidebar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .history-item {
+            width: 70px;
+            height: 70px;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .history-item:hover {
+            transform: scale(1.05);
+            border-color: var(--text-color);
+        }
+
+        .history-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .settings-button {
+            margin-top: 15px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--button-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .settings-button:hover {
+            background-color: var(--button-hover);
+            transform: rotate(30deg);
+        }
+
+        /* 左侧设置面板 */
+        .settings-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 300px;
+            background-color: var(--sidebar-bg);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            z-index: 20;
+        }
+
+        .settings-panel.active {
+            transform: translateX(0);
+        }
+
+        .settings-panel h2 {
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .setting-item {
+            margin-bottom: 20px;
+        }
+
+        .setting-item label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #3498db;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        /* 平板模式样式 */
+        .tablet-mode .button-bar {
+            flex-direction: column;
+            left: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            bottom: auto;
+        }
+
+        .tablet-mode .button {
+            width: 70px;
+            height: 70px;
+        }
+
+        .tablet-mode .button i {
+            font-size: 30px;
+        }
+
+        .tablet-mode .history-sidebar {
+            top: auto;
+            bottom: 150px;
+            left: 20px;
+            flex-direction: column;
+        }
+
+        /* 长宽比处理 */
+        .wide-image {
+            max-height: 80vh;
+            max-width: 100%;
+        }
+
+        .tall-image {
+            max-width: 80vw;
+            max-height: 100%;
+        }
+
+        /* 确认对话框 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: var(--sidebar-bg);
+            padding: 30px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        /* 关于信息 */
+        .about-section {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 0.9rem;
+            color: #777;
+        }
+
+        /* 拖放区域 */
+        .drop-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            display: none;
+        }
+
+        .drop-message {
+            background-color: var(--sidebar-bg);
+            padding: 40px;
+            border-radius: 15px;
+            font-size: 24px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 图标字体 */
+        @font-face {
+            font-family: 'Material Icons';
+            font-style: normal;
+            font-weight: 400;
+            src: url(https://fonts.gstatic.com/s/materialicons/v140/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2) format('woff2');
+        }
+
+        .material-icons {
+            font-family: 'Material Icons';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+    </style>
+</head>
+<body>
+    <!-- 授权界面 -->
+    <section id="authorization">
+        <h1>本地图片浏览器</h1>
+        <p>此应用需要访问您的本地图片文件夹以展示图片内容。请授权访问一个包含图片的文件夹（支持JPG、PNG、HEIC格式）。</p>
+        <button id="select-folder-btn" class="btn">选择文件夹</button>
+        <input type="file" id="folder-input" webkitdirectory directory multiple>
+        
+        <div class="loader">
+            <div class="spinner"></div>
+            <p>正在加载文件夹内容...</p>
+            <p id="loading-progress">剩余时间估算中...</p>
+        </div>
+    </section>
+
+    <!-- 主界面 -->
+    <main id="main-container">
+        <!-- 高斯模糊背景 -->
+        <div class="blur-background" id="blur-bg"></div>
+        
+        <!-- 顶部文件信息 -->
+        <div class="file-info">
+            <span class="filename" id="filename">未加载图片</span>
+            <span> • </span>
+            <span id="file-date">--/--/---- --:--</span>
+        </div>
+        
+        <!-- 图片容器 -->
+        <div class="image-container">
+            
+        </div>
+        
+        <!-- EXIF信息侧边栏 -->
+        <aside class="sidebar" id="exif-sidebar">
+            <button class="close-sidebar" id="close-exif">
+                <span class="material-icons">close</span>
+            </button>
+            <div class="sidebar-content">
+                <h3>图片信息</h3>
+                <div class="exif-info" id="exif-container">
+                    <!-- EXIF信息将通过JS动态填充 -->
+                </div>
+            </div>
+        </aside>
+        
+        <!-- 设置面板 -->
+        <aside class="settings-panel" id="settings-panel">
+            <button class="close-sidebar" id="close-settings">
+                <span class="material-icons">close</span>
+            </button>
+            <div class="sidebar-content">
+                <h2>设置</h2>
+                
+                <div class="setting-item">
+                    <label for="dark-mode">深色模式</label>
+                    <label class="switch">
+                        <input type="checkbox" id="dark-mode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-item">
+                    <label for="tablet-mode">平板模式</label>
+                    <label class="switch">
+                        <input type="checkbox" id="tablet-mode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="setting-item">
+                    <label>文件夹路径</label>
+                    <p id="current-folder-path">未选择文件夹</p>
+                    <button class="btn" id="change-folder-btn">更改文件夹</button>
+                </div>
+                
+                <div class="about-section">
+                    <p>MocaBolka feat. DeepSeek</p>
+                    <p>版本 1.5.4</p>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- 历史记录面板 -->
+        <div class="history-sidebar" id="history-panel">
+            <!-- 历史记录缩略图将通过JS动态填充 -->
+        </div>
+        
+        <!-- 设置按钮 -->
+        <div class="settings-button" id="settings-btn">
+            <span class="material-icons">settings</span>
+        </div>
+        
+        <!-- 底部操作按钮 -->
+        <div class="button-bar">
+            <button class="button" id="delete-btn" title="删除">
+                <span class="material-icons">delete</span>
+            </button>
+            <button class="button" id="open-btn" title="在默认应用中打开">
+                <span class="material-icons">open_in_new</span>
+            </button>
+            <button class="button" id="explorer-btn" title="在文件资源管理器中打开">
+                <span class="material-icons">folder_open</span>
+            </button>
+            <button class="button" id="favorite-btn" title="收藏">
+                <span class="material-icons">favorite</span>
+            </button>
+            <button class="button" id="next-btn" title="下一张随机图片">
+                <span class="material-icons">arrow_forward</span>
+            </button>
+        </div>
+    </main>
+    
+    <!-- 删除确认对话框 -->
+    <div class="modal" id="delete-modal">
+        <div class="modal-content">
+            <h3>确认删除</h3>
+            <p>您确定要永久删除这张图片吗？此操作无法撤销。</p>
+            <div class="modal-buttons">
+                <button class="btn" id="cancel-delete">取消</button>
+                <button class="btn" id="confirm-delete">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 拖放区域 -->
+    <div class="drop-overlay" id="drop-overlay">
+        <div class="drop-message">拖放图片到此处打开</div>
+    </div>
+
+    <script>
+        // 应用状态管理
+        const appState = {
+            folderHandle: null,
+            imageFiles: [],
+            currentImageIndex: -1,
+            history: [],
+            settings: {
+                darkMode: false,
+                tabletMode: false,
+                folderPath: ''
+            },
+            imageCache: new Map(),
+            maxCacheSize: 5,
+            exifSupported: true
+        };
+
+        // DOM元素引用
+        const dom = {
+            authSection: document.getElementById('authorization'),
+            mainContainer: document.getElementById('main-container'),
+            folderInput: document.getElementById('folder-input'),
+            selectFolderBtn: document.getElementById('select-folder-btn'),
+            loader: document.querySelector('.loader'),
+            loadingProgress: document.getElementById('loading-progress'),
+            mainImage: document.getElementById('main-image'),
+            blurBg: document.getElementById('blur-bg'),
+            filename: document.getElementById('filename'),
+            fileDate: document.getElementById('file-date'),
+            exifSidebar: document.getElementById('exif-sidebar'),
+            closeExif: document.getElementById('close-exif'),
+            exifContainer: document.getElementById('exif-container'),
+            settingsPanel: document.getElementById('settings-panel'),
+            closeSettings: document.getElementById('close-settings'),
+            settingsBtn: document.getElementById('settings-btn'),
+            historyPanel: document.getElementById('history-panel'),
+            deleteBtn: document.getElementById('delete-btn'),
+            openBtn: document.getElementById('open-btn'),
+            explorerBtn: document.getElementById('explorer-btn'),
+            favoriteBtn: document.getElementById('favorite-btn'),
+            nextBtn: document.getElementById('next-btn'),
+            deleteModal: document.getElementById('delete-modal'),
+            cancelDelete: document.getElementById('cancel-delete'),
+            confirmDelete: document.getElementById('confirm-delete'),
+            darkModeToggle: document.getElementById('dark-mode'),
+            tabletModeToggle: document.getElementById('tablet-mode'),
+            currentFolderPath: document.getElementById('current-folder-path'),
+            changeFolderBtn: document.getElementById('change-folder-btn'),
+            dropOverlay: document.getElementById('drop-overlay')
+        };
+
+        // 初始化应用
+        function initApp() {
+            loadSettings();
+            setupEventListeners();
+            checkFolderAuthorization();
+            
+            // 检查EXIF库是否加载成功
+            setTimeout(() => {
+                if (typeof EXIF === 'undefined') {
+                    appState.exifSupported = false;
+                    console.warn('EXIF库加载失败，将禁用EXIF功能');
+                }
+            }, 2000);
+        }
+
+        // 加载设置
+        function loadSettings() {
+            const savedSettings = localStorage.getItem('imageBrowserSettings');
+            if (savedSettings) {
+                appState.settings = JSON.parse(savedSettings);
+                applySettings();
+            }
+            
+            // 检查系统深色模式
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                appState.settings.darkMode = true;
+            }
+            
+            applySettings();
+        }
+
+        // 应用设置
+        function applySettings() {
+            // 深色模式
+            if (appState.settings.darkMode) {
+                document.body.setAttribute('data-theme', 'dark');
+                dom.darkModeToggle.checked = true;
+            } else {
+                document.body.removeAttribute('data-theme');
+                dom.darkModeToggle.checked = false;
+            }
+            
+            // 平板模式
+            if (appState.settings.tabletMode) {
+                document.body.classList.add('tablet-mode');
+                dom.tabletModeToggle.checked = true;
+            } else {
+                document.body.classList.remove('tablet-mode');
+                dom.tabletModeToggle.checked = false;
+            }
+            
+            // 保存设置
+            localStorage.setItem('imageBrowserSettings', JSON.stringify(appState.settings));
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 文件夹选择
+            dom.selectFolderBtn.addEventListener('click', () => dom.folderInput.click());
+            dom.folderInput.addEventListener('change', handleFolderSelection);
+            dom.changeFolderBtn.addEventListener('click', () => dom.folderInput.click());
+            
+            // 导航按钮
+            dom.nextBtn.addEventListener('click', showRandomImage);
+            dom.settingsBtn.addEventListener('click', toggleSettingsPanel);
+            dom.closeExif.addEventListener('click', () => dom.exifSidebar.classList.remove('active'));
+            dom.closeSettings.addEventListener('click', () => dom.settingsPanel.classList.remove('active'));
+            
+            // 图片操作按钮
+            dom.deleteBtn.addEventListener('click', showDeleteConfirmation);
+            dom.cancelDelete.addEventListener('click', hideDeleteConfirmation);
+            dom.confirmDelete.addEventListener('click', deleteCurrentImage);
+            dom.openBtn.addEventListener('click', openInDefaultApp);
+            dom.explorerBtn.addEventListener('click', showInExplorer);
+            dom.favoriteBtn.addEventListener('click', addToFavorites);
+            
+            // 设置切换
+            dom.darkModeToggle.addEventListener('change', toggleDarkMode);
+            dom.tabletModeToggle.addEventListener('change', toggleTabletMode);
+            
+            // 拖放支持
+            document.addEventListener('dragover', handleDragOver);
+            document.addEventListener('drop', handleDrop);
+            
+            // 检查浏览器能力，移除无法实现的按钮
+            checkBrowserCapabilities();
+        }
+
+        // 检查浏览器能力，移除无法实现的按钮
+        function checkBrowserCapabilities() {
+            // 检查是否支持文件系统API
+            if (typeof window.showDirectoryPicker === 'undefined') {
+                // 不支持文件系统API，移除相关按钮
+                dom.explorerBtn.style.display = 'none';
+                dom.favoriteBtn.style.display = 'none';
+            }
+        }
+
+        // 检查已有文件夹授权
+        function checkFolderAuthorization() {
+            const savedFolder = localStorage.getItem('lastFolderPath');
+            if (savedFolder) {
+                appState.settings.folderPath = savedFolder;
+                dom.currentFolderPath.textContent = savedFolder;
+                // 对于已保存的文件夹，使用文件选择器重新选择
+                dom.authSection.style.display = 'flex';
+            }
+        }
+
+        // 处理文件夹选择
+        async function handleFolderSelection(event) {
+            const files = Array.from(event.target.files);
+            if (files.length === 0) return;
+            
+            // 显示加载动画
+            dom.authSection.style.display = 'none';
+            dom.loader.style.display = 'flex';
+            
+            // 过滤图片文件
+            appState.imageFiles = files.filter(file => 
+                file.type.startsWith('image/') && 
+                ['image/jpeg', 'image/png', 'image/heic'].includes(file.type)
+            );
+            
+            // 保存文件夹路径
+            const folderPath = files[0].webkitRelativePath.split('/')[0];
+            appState.settings.folderPath = folderPath;
+            dom.currentFolderPath.textContent = folderPath;
+            localStorage.setItem('lastFolderPath', folderPath);
+            
+            // 模拟加载进度
+            simulateLoadingProgress();
+            
+            // 加载完成后显示主界面
+            setTimeout(() => {
+                dom.loader.style.display = 'none';
+                dom.mainContainer.style.display = 'block';
+                showRandomImage();
+            }, 2000);
+        }
+
+        // 模拟加载进度
+        function simulateLoadingProgress() {
+            let progress = 0;
+            const total = 100;
+            const interval = setInterval(() => {
+                progress += 5;
+                const remaining = total - progress;
+                const seconds = Math.ceil(remaining / 5);
+                dom.loadingProgress.textContent = `剩余时间: ${seconds}秒`;
+                
+                if (progress >= total) {
+                    clearInterval(interval);
+                }
+            }, 200);
+        }
+
+        // 显示随机图片
+        function showRandomImage() {
+            if (appState.imageFiles.length === 0) return;
+            
+            // 随机选择图片
+            const randomIndex = Math.floor(Math.random() * appState.imageFiles.length);
+            appState.currentImageIndex = randomIndex;
+            const file = appState.imageFiles[randomIndex];
+            
+            // 更新历史记录
+            updateHistory(file);
+            
+            // 显示图片
+            displayImage(file);
+            
+            // 显示文件信息
+            displayFileInfo(file);
+            
+            // 检查并显示EXIF信息
+            checkExifData(file);
+        }
+
+        // 显示图片
+        function displayImage(file) {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                // 缓存图片
+                if (appState.imageCache.size >= appState.maxCacheSize) {
+                    // 移除最旧的缓存
+                    const oldestKey = appState.imageCache.keys().next().value;
+                    appState.imageCache.delete(oldestKey);
+                }
+                appState.imageCache.set(file.name, e.target.result);
+                
+                // 设置主图片
+                dom.mainImage.src = e.target.result;
+                
+                // 设置模糊背景
+                dom.blurBg.style.backgroundImage = `url(${e.target.result})`;
+                
+                // 处理特殊长宽比
+                handleAspectRatio();
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        // 处理特殊长宽比
+        function handleAspectRatio() {
+            const img = dom.mainImage;
+            img.onload = () => {
+                const ratio = img.naturalWidth / img.naturalHeight;
+                
+                if (ratio > 2) {
+                    // 超宽图
+                    img.classList.add('wide-image');
+                    img.classList.remove('tall-image');
+                } else if (ratio < 0.5) {
+                    // 超长图
+                    img.classList.add('tall-image');
+                    img.classList.remove('wide-image');
+                } else {
+                    // 正常比例
+                    img.classList.remove('wide-image', 'tall-image');
+                }
+            };
+        }
+
+        // 显示文件信息
+        function displayFileInfo(file) {
+            // 文件名
+            const name = file.name;
+            dom.filename.textContent = name;
+            
+            // 修改日期
+            const date = new Date(file.lastModified);
+            const formattedDate = `${date.getFullYear()}/${(date.getMonth()+1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+            dom.fileDate.textContent = formattedDate;
+        }
+
+        // 检查并显示EXIF信息
+        function checkExifData(file) {
+            if (!appState.exifSupported || typeof EXIF === 'undefined') {
+                dom.exifSidebar.classList.remove('active');
+                return;
+            }
+            
+            EXIF.getData(file, function() {
+                const allMetaData = EXIF.getAllTags(this);
+                
+                if (Object.keys(allMetaData).length === 0) {
+                    dom.exifSidebar.classList.remove('active');
+                    return;
+                }
+                
+                displayExifData(allMetaData);
+                dom.exifSidebar.classList.add('active');
+            });
+        }
+
+        // 显示EXIF数据
+        function displayExifData(exif) {
+            const exifMap = {
+                'Make': '制造商',
+                'Model': '型号',
+                'FNumber': '光圈值',
+                'ExposureTime': '曝光时间',
+                'ISOSpeedRatings': 'ISO速度',
+                'FocalLength': '焦距',
+                'ExposureCompensation': '曝光补偿',
+                'MaxApertureValue': '最大光圈',
+                'MeteringMode': '测光模式',
+                'SubjectDistance': '目标距离',
+                'Flash': '闪光灯模式',
+                'FocalLengthIn35mmFilm': '35mm焦距'
+            };
+            
+            let exifHtml = '';
+            
+            for (const [key, value] of Object.entries(exifMap)) {
+                if (exif[key] !== undefined) {
+                    exifHtml += `
+                        <div class="exif-item">
+                            <div class="exif-label">${value}</div>
+                            <div class="exif-value">${exif[key]}</div>
+                        </div>
+                    `;
+                }
+            }
+            
+            dom.exifContainer.innerHTML = exifHtml || '<p>无EXIF信息</p>';
+        }
+
+        // 更新历史记录
+        function updateHistory(file) {
+            // 添加到历史记录
+            appState.history.unshift(file);
+            
+            // 只保留最近3条记录
+            if (appState.history.length > 3) {
+                appState.history.pop();
+            }
+            
+            // 更新UI
+            dom.historyPanel.innerHTML = '';
+            appState.history.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.dataset.index = index;
+                    img.addEventListener('click', () => showHistoryImage(index));
+                    
+                    div.appendChild(img);
+                    dom.historyPanel.appendChild(div);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 显示历史图片
+        function showHistoryImage(index) {
+            const file = appState.history[index];
+            displayImage(file);
+            displayFileInfo(file);
+            checkExifData(file);
+        }
+
+        // 切换设置面板
+        function toggleSettingsPanel() {
+            dom.settingsPanel.classList.toggle('active');
+        }
+
+        // 切换深色模式
+        function toggleDarkMode() {
+            appState.settings.darkMode = dom.darkModeToggle.checked;
+            applySettings();
+        }
+
+        // 切换平板模式
+        function toggleTabletMode() {
+            appState.settings.tabletMode = dom.tabletModeToggle.checked;
+            applySettings();
+        }
+
+        // 显示删除确认对话框
+        function showDeleteConfirmation() {
+            dom.deleteModal.style.display = 'flex';
+        }
+
+        // 隐藏删除确认对话框
+        function hideDeleteConfirmation() {
+            dom.deleteModal.style.display = 'none';
+        }
+
+        // 删除当前图片
+        function deleteCurrentImage() {
+            if (appState.currentImageIndex === -1) return;
+            
+            // 从文件列表中移除
+            appState.imageFiles.splice(appState.currentImageIndex, 1);
+            
+            // 从历史记录中移除
+            const currentFile = appState.imageFiles[appState.currentImageIndex];
+            appState.history = appState.history.filter(file => file !== currentFile);
+            
+            // 隐藏对话框并显示下一张图片
+            hideDeleteConfirmation();
+            showRandomImage();
+        }
+
+        // 在默认应用中打开
+        function openInDefaultApp() {
+            if (appState.currentImageIndex === -1) return;
+            
+            const file = appState.imageFiles[appState.currentImageIndex];
+            const url = URL.createObjectURL(file);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            
+            // 清理
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+        }
+
+        // 在资源管理器中显示位置
+        function showInExplorer() {
+            alert('在实际应用中，这里会打开文件资源管理器并定位到当前文件');
+        }
+
+        // 添加到收藏
+        function addToFavorites() {
+            if (appState.currentImageIndex === -1) return;
+            
+            const file = appState.imageFiles[appState.currentImageIndex];
+            alert(`已将 "${file.name}" 添加到收藏夹`);
+        }
+
+        // 处理拖放事件
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dom.dropOverlay.style.display = 'flex';
+        }
+
+        // 处理文件拖放
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dom.dropOverlay.style.display = 'none';
+            
+            const files = e.dataTransfer.files;
+            if (files.length === 0) return;
+            
+            // 处理拖放的文件
+            const imageFiles = Array.from(files).filter(file => 
+                file.type.startsWith('image/') && 
+                ['image/jpeg', 'image/png', 'image/heic'].includes(file.type)
+            );
+            
+            if (imageFiles.length > 0) {
+                // 切换到主界面
+                dom.authSection.style.display = 'none';
+                dom.loader.style.display = 'none';
+                dom.mainContainer.style.display = 'block';
+                
+                // 添加到文件列表
+                appState.imageFiles = imageFiles;
+                
+                // 显示第一张图片
+                appState.currentImageIndex = 0;
+                displayImage(imageFiles[0]);
+                displayFileInfo(imageFiles[0]);
+                checkExifData(imageFiles[0]);
+            }
+        }
+
+        // 初始化应用
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>

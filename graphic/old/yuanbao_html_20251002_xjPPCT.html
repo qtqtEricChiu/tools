@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地图片浏览器 v1.7.0.1</title>
+    <style>
+        :root {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --accent-color: #4a8cff;
+            --border-color: #333333;
+            --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            --transition: all 0.3s ease;
+            --font-main: "OPPO Sans 4.0", -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-primary: #f5f5f极;
+                --bg-secondary: #ffffff;
+                --text-primary: #333333;
+                --text-secondary: #666666;
+                --border-color: #e0e0e0;
+                --极 card-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 授权界面 */
+        .auth-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 极 100%;
+            background-color: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        .auth-container.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .auth-content {
+            background-color: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+        }
+
+        .auth-content h1 {
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .auth-content p {
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .auth-btn {
+            background-color: var(--accent极-color);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: var(--transition);
+            font-weight: 500;
+        }
+
+        .auth-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        /* 加载动画 */
+        .loading-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            backdrop-filter: blur(10px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-container.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        .loading-text {
+            color: white;
+            font-size: 18px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 主界面布局 */
+        .main-container {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            grid-template-areas:
+                "header header"
+                "history main"
+                "footer footer";
+            opacity: 0;
+            transition: opacity 0.极 5s ease;
+        }
+
+        .极 main-container.show {
+            opacity: 1;
+        }
+
+        /* 顶部标题栏 */
+        .header {
+            grid-area: header;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            z-index: 10;
+        }
+
+        .file-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-name {
+            font-size: 18px;
+            font-weight: 500;
+            max-width: 100%;
+            overflow: hidden;
+            position: relative;
+            white-space: nowrap;
+        }
+
+        .file-name.long::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 40px;
+            background: linear-gradient(90deg, transparent, var(--bg-secondary));
+        }
+
+        .file-modified {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* 左侧历史记录 */
+        .history-panel {
+            grid-area: history;
+            width: 100px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border-right: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            z-index: 5;
+        }
+
+        .history-title {
+            font-size: 14px;
+            color极: var(--text-secondary);
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        .history-item {
+            width: 70px;
+            height: 70极 px;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 12px;
+            cursor: pointer;
+            position: relative;
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            transition: var(--transition);
+        }
+
+        .history-item:hover {
+            transform: scale(1.05);
+            border-color: var(--accent-color);
+        }
+
+        .history-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .settings-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            margin-top: auto;
+            transition: var(--transition);
+        }
+
+        .settings-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .settings-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-primary);
+        }
+
+        /* 主图片区域 */
+        .main-content {
+            grid-area: main;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .image-container {
+            position: relative;
+            max-width: 100%;
+            max-height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .main-image {
+            max-width: 100%;
+            max-height: 90vh;
+            object-fit: contain;
+            transition: opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .main-image.show {
+            opacity: 1;
+        }
+
+        .blur-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px) brightness(0.5);
+            opacity: 0;
+            z-index: -1;
+            transition: opacity 0.3s ease;
+        }
+
+        .blur-background.show {
+            opacity: 0.7;
+        }
+
+        .scrollable-image {
+            max-height: 90vh;
+            overflow: auto;
+        }
+
+        /* 底部操作栏 */
+        .footer {
+            grid-area: footer;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--bg-secondary);
+            z-index: 10;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 24px;
+        }
+
+        .action-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.极 1);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .action-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .action-btn极 svg {
+            width极: 24px;
+            height: 24px;
+            fill: var(--text-primary);
+        }
+
+        /* 平板模式浮动按钮 */
+        .tablet-action-buttons {
+            position: fixed;
+            right: 40px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            z-index: 50;
+            opacity: 0;
+            transform: translateY(-50%) translateX(20px);
+            transition: var(--transition);
+        }
+
+        .tablet-mode .tablet-action-buttons {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+        }
+
+        .tablet-action-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: var(--card-shadow);
+        }
+
+        .tablet-action-btn:hover {
+            background-color: rgba(255, 255, 255极, 0.2);
+            transform: translateY(-4px);
+        }
+
+        .tablet-action-btn svg {
+            width: 32px;
+            height: 32px;
+            fill: var(--text-primary);
+        }
+
+        /* 设置面板 */
+        .settings-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 320px;
+            height: 100%;
+            background-color: var(--bg-secondary);
+            z-index: 20;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            padding: 24px;
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+        }
+
+        .settings-panel.open {
+            transform: translateX(0);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .settings-title {
+            font-size: 20px;
+            font-weight: 500;
+        }
+
+        .close-settings {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 24px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            transition: var(--transition);
+极        }
+
+        .close-settings:hover {
+            background-color: rgba(255, 255, 255, 极 0.1);
+        }
+
+        .settings-group {
+            margin-bottom: 24px;
+        }
+
+        .settings-group-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin极-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .setting-label {
+            font-size: 14px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left极: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4极 s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        .about-section {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .version {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        /* 计数显示 */
+        .count-display {
+            position: fixed;
+            right: 20px;
+            bottom: 100px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 30;
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
+        }
+
+        /* Toast通知 */
+        .toast-container {
+            position: fixed;
+            left: 50%;
+            top: 20px;
+            transform: translateX(-50%) translateY(-100px);
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z极-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+        }
+
+        .toast-container.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: all;
+        }
+
+        .toast-icon {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toast-message {
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .toast-undo {
+            color: var(--accent-color);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: var(--transition);
+        }
+
+        .toast-undo:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- 授权界面 -->
+    <div class="auth-container" id="authContainer">
+        <div class="auth-content">
+            <h1>授权访问本地图片</h1>
+            <p>为了浏览您的本地图片，请授权访问您的图片文件夹。我们承诺仅读取图像文件，不会访问其他文件类型。</p>
+            <button class="auth-btn" id="authBtn">授权文件夹</button>
+        </div>
+    </div>
+
+    <!-- 加载动画 -->
+    <div class极="loading-container" id="loadingContainer">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在加载图片文件...</div>
+    </div>
+
+    <!-- Toast通知 -->
+    <div class="toast-container" id="toastContainer">
+        <div class="toast-icon" id="toastIcon"></div>
+        <div class="toast-message" id="toastMessage"></div>
+        <button class="toast-undo" id="toastUndo">撤销</button>
+    </div>
+
+    <!-- 计数显示 -->
+    <div class="count-display" id="countDisplay">浏览次数: 0</div>
+
+    <!-- 主界面 -->
+    <div class="main-container" id="mainContainer">
+        <!-- 顶部标题栏 -->
+        <header class="header">
+            <极 div class="file-info">
+                <div class="file-name" id="fileName">未选择图片</div>
+                <div class="file-modified" id="fileModified">最后修改时间: --</div>
+            </div>
+        </header>
+
+        <!-- 左侧历史记录 -->
+        <div class="history-panel">
+            <div class="history-title">最近浏览</div>
+            <div class="history-item" id="historyItem1"></div>
+            <div class="history-item" id="historyItem2"></div>
+            <div class="history-item" id="historyItem3"></div>
+            <div class="settings-btn" id="settingsBtn">
+                <svg viewBox="0 0 24 24">
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.极 64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-极 1.92-3.32c-.12-.22-.37-.3-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2极.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94 0 .31.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.3.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.极 6 3.6-3.6 3.6 3.6 3.6z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- 主图片区域 -->
+        <main class="main-content">
+            <div class="image-container">
+                <div class="blur-background" id="blurBackground"></div>
+                <div class="scrollable-image" id="scrollableImage">
+                    
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部操作栏 -->
+        <footer class="footer">
+            <div class="action-buttons">
+                <button class="action-btn" id="deleteBtn" title="删除图片">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M6 19c极 0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>
+                    </svg>
+                </button>
+                <button class="action-btn" id="viewLargeBtn" title="查看大图">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9极.5 16c1.61 0 3.09-.59 极 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
+                    </svg>
+                </button>
+                <button class="action-btn" id="favoriteBtn" title="收藏图片">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+                    </svg>
+                </button>
+                <button class="action-btn" id="nextBtn" title="下一张图片">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M5.88 4.12L13.76 12l-7.88 7.88L8 22l10-10L8 2z"></path>
+                    </svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 平板模式浮动按钮 -->
+    <div class="tablet-action-buttons" id="tabletActionButtons">
+        <button class="极 tablet-action-btn" id="tabletDeleteBtn" title="删除图片">
+            <svg viewBox="0 0 24 24">
+                <path d="M6 19c0 1.1.9 2 2 2极 h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5极 l-1 1H5v2h14V4z"></path>
+            </svg>
+        </button>
+        <button class="tablet-action-btn" id="tabletViewLargeBtn" title="查看大图">
+            <svg viewBox="0 极 0 24 24">
+                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 极 9.5 5.91 16 9.5 16c1.61 0 3.极 09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
+            </svg>
+        </button>
+        <button class="tablet-action-btn" id="tabletFavoriteBtn" title="收藏图片">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.极 5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 极 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></极 path>
+            </svg>
+        </button>
+        <button class="tablet-action-btn" id="tabletNextBtn" title="下一张图片">
+            <svg viewBox="0 0 24 24">
+                <path d="M5.88 4.12L13.76 12l-7.88 7.88L8 22l10-10L8 2z"></path>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+            <div class="settings-title">设置</div>
+            <button class="close-settings" id="closeSettingsBtn">×</button>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">显示设置</div>
+            <div class="setting-item">
+                <span class="setting-label">平板模式</span>
+                <label class="switch">
+                    <input type="checkbox" id="tabletModeToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">文件夹设置</div>
+            <div class="setting-item">
+                <span class="setting-label">当前文件夹</span>
+                <span class="setting-value" id="currentFolder">未选择</span>
+            </div>
+            <button class="auth-btn" id="changeFolderBtn" style="width:100%;margin-top:12px;">更改文件夹</button>
+        </div>
+        
+        <div class="settings-group">
+            <div class="settings-group-title">文件设置</div>
+            <div class="setting-item">
+                <span class="setting-label">读取子文件夹</span>
+                <label class="switch">
+                    <input type="checkbox" id="subfoldersToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="about-section">
+            <div>MocaBolka</div>
+            <div style="margin: 8px 0; font-size: 18px;">×</div>
+            <div>腾讯元宝 feat. DeepSeek</div>
+            <div class="version">版本 1.7.0.1</div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let directoryHandle;
+        let imageFiles = [];
+        let currentImageIndex = -1;
+        let historyImages = [];
+        const MAX_HISTORY = 3;
+        const MAX_CACHE = 5;
+        let imageCache = new Map();
+        let settings = {
+            tabletMode: false,
+            includeSubfolders: true
+        };
+        let lastAction = null;
+        let toastTimeout;
+        let refreshInterval;
+        let imageCounts = {}; // 图片计数对象
+
+        // DOM元素
+        const authContainer = document.getElementById('authContainer');
+        const authBtn = document.getElementById('authBtn');
+        const loadingContainer = document.getElementById('loadingContainer');
+        const mainContainer = document.getElementById('mainContainer');
+        const fileName = document.getElementById('fileName');
+        const fileModified = document.getElementById('fileModified');
+        const historyItem1 = document.getElementById('historyItem1');
+        const historyItem2 = document.getElementById('history极Item2');
+        const historyItem3 = document.getElementById('historyItem3');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const mainImage = document.getElementById('mainImage');
+        const blurBackground = document.getElementById('blurBackground');
+        const scrollableImage = document.getElementById('scrollableImage');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const viewLargeBtn = document.getElementById('viewLargeBtn');
+        const favoriteBtn = document.getElementById('favoriteBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        const tabletModeToggle = document.getElementById('tabletModeToggle');
+        const subfoldersToggle = document.getElementById('subfoldersToggle');
+        const currentFolder = document.getElementById('currentFolder');
+        const changeFolderBtn = document.getElementById('changeFolderBtn');
+        const toastContainer = document.getElementById('toastContainer');
+        const toastIcon = document.getElementById('toastIcon');
+        const toastMessage = document.getElementById('toastMessage');
+        const toastUndo = document.getElementById('toastUnd极o');
+        const tabletActionButtons = document.getElementById('tabletActionButtons');
+        const tabletDeleteBtn = document.getElementById('tabletDeleteBtn');
+        const tabletViewLargeBtn = document.getElementById('tabletViewLargeBtn');
+        const tabletFavoriteBtn = document.getElementById('tabletFavoriteBtn');
+        const tabletNextBtn = document.getElementById('tabletNextBtn');
+        const countDisplay = document.getElementById('countDisplay');
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 加载保存的设置
+            loadSettings();
+            
+            // 检查是否已有授权
+            checkSavedDirectory();
+            
+            // 加载图片计数
+            loadImageCounts();
+            
+            // 事件监听器
+            setupEventListeners();
+            
+            // 设置键盘快捷键
+            setupKeyboardShortcuts();
+        });
+
+        // 检查保存的目录
+        async function checkSavedDirectory() {
+            const savedDirHandleId = localStorage.getItem('directoryHandleId');
+            if (savedDirHandleId) {
+                try {
+                    directoryHandle = await window.showDirectoryPicker({
+                        id: savedDirHandleId,
+                        mode: 'readwrite'
+                    });
+                    startLoadingImages();
+                } catch (error) {
+                    console.error('无法恢复保存的目录:', error);
+                    localStorage.removeItem('directoryHandleId');
+                }
+            }
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 授权按钮
+            authBtn.addEventListener('click', async () => {
+                try {
+                    directoryHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite'
+                    });
+                    localStorage.setItem('directoryHandleId', directoryHandle.id);
+                    startLoadingImages();
+                } catch (error) {
+                    console.error('目录授权失败:', error);
+                }
+            });
+
+            // 导航按钮
+            nextBtn.addEventListener('click', showNextRandomImage);
+            deleteBtn.addEventListener('click', deleteCurrentImage);
+            viewLargeBtn.addEventListener('click', viewLargeImage);
+            favoriteBtn.addEventListener('click', addToFavorites);
+            
+            // 平板模式按钮
+            tabletDeleteBtn.addEventListener('click', deleteCurrentImage);
+            tabletViewLargeBtn.addEventListener('click', viewLargeImage);
+            tabletFavoriteBtn.addEventListener('click', addToFavorites);
+            tabletNextBtn.addEventListener('click', showNextRandomImage);
+            
+            // 历史记录
+            historyItem1.addEventListener('click', () => navigateHistory(0));
+            historyItem2.addEventListener('click', () => navigateHistory(1));
+            historyItem3.addEventListener('click', () => navigateHistory(2));
+            
+            // 设置按钮极
+            settingsBtn.addEventListener('click', () => {
+                settingsPanel.classList.add('open');
+            });
+            
+            closeSettingsBtn.addEventListener('click', () => {
+                settingsPanel.classList.remove('open');
+            });
+            
+            // 设置切换
+            tabletModeToggle.addEventListener('change', () => {
+                settings.tabletMode = tabletModeToggle.checked;
+                saveSettings();
+                applyTabletMode();
+            });
+            
+            subfoldersToggle.addEventListener('change', () => {
+                settings.includeSubfolders = subfoldersToggle.checked;
+                saveSettings();
+                // 重新加载图片
+                if (directoryHandle) {
+                    startLoadingImages();
+                }
+            });
+            
+            changeFolderBtn.addEventListener('click', async () => {
+                try {
+                    directoryHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite'
+                    });
+                    localStorage.setItem('directoryHandleId', directoryHandle.id);
+                    startLoadingImages();
+                } catch (error) {
+                    console.error('目录授权失败:', error);
+                }
+            });
+            
+            // Toast撤销按钮
+            toastUndo.addEventListener('click', undoLastAction);
+        }
+
+        // 设置键盘快捷键
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                // 忽略输入框中的按键
+                if (document.activeElement.tagName === 'INPUT') return;
+                
+                switch (e.key) {
+                    case 'ArrowRight':
+                        showNextRandomImage();
+                        break;
+                    case ' ':
+                        viewLargeImage();
+                        break;
+                    case 'Delete':
+                        deleteCurrentImage();
+                        break;
+                    case 'a':
+                    case 'A':
+                        addToFavorites();
+                        break;
+                    case 'z':
+                    case 'Z':
+                        undoLastAction();
+                        break;
+                }
+            });
+        }
+
+        // 开始加载图片
+        async function startLoadingImages极() {
+            authContainer.classList.add('hidden');
+            loadingContainer.classList.add('show');
+            
+            try {
+                // 获取文件夹中的所有图片文件
+                imageFiles = await getAllImageFiles(directoryHandle);
+                
+                // 更新UI
+                currentFolder.textContent = directoryHandle.name;
+                
+                // 显示第一张图片
+                if (imageFiles.length > 0) {
+                    showNextRandomImage();
+                    mainContainer.classList.add('show');
+                } else {
+                    alert('文件夹中没有找到图片文件');
+                }
+            } catch (error) {
+                console.error('加载图片失败:', error);
+                alert('加载图片失败: ' + error.message);
+            } finally {
+                // 确保加载动画隐藏
+                loadingContainer.classList.remove('show');
+            }
+        }
+
+        // 获取所有图片文件
+        async function getAllImageFiles(dirHandle) {
+            const imageFiles = [];
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/heic', 'image/heif'];
+            const excludedFolders = ['.MediaTrash', 'Collections'];
+            
+            async function processDirectory(handle, isRoot = false) {
+                for await (const entry of handle.values()) {
+                    if (entry.kind === 'file') {
+                        const file = await entry.getFile();
+                        if (allowedTypes.includes(file.type)) {
+                            imageFiles.push({
+                                handle: entry,
+                                name: file.name,
+                                lastModified: file.lastModified
+                            });
+                        }
+                    } else if (entry.kind === 'directory' && settings.includeSubfolders) {
+                        // 跳过排除的文件夹（除非是根目录）
+                        if (!isRoot || !excludedFolders.includes(entry.name)) {
+                            await processDirectory(entry);
+                        }
+                    }
+                }
+            }
+            
+            await processDirectory(dirHandle, true);
+            return imageFiles;
+        }
+
+        // 显示下一张随机图片
+        async function showNextRandomImage() {
+            if (imageFiles.length === 0) return;
+            
+            // 随机选择一张图片
+            let newIndex;
+            do {
+                newIndex = Math.floor(Math.random() * imageFiles.length);
+            } while (newIndex === currentImageIndex && imageFiles.length > 1);
+            
+            currentImageIndex = newIndex;
+            const imageInfo = imageFiles[currentImageIndex];
+            
+            // 更新图片计数
+            updateImageCount(imageInfo.name);
+            
+            // 添加到历史记录
+            addToHistory(imageInfo);
+            
+            // 获取图片URL
+            const file = await imageInfo.handle.get极File();
+            const url = URL.createObjectURL(file);
+            
+            // 显示图片
+            displayImage(url, imageInfo.name, new Date(imageInfo.lastModified));
+            
+            // 清理缓存
+            manageCache();
+        }
+
+        // 显示图片
+        function displayImage(url, name, modifiedDate) {
+            // 更新文件名和修改时间
+            fileName.textContent = name;
+            // 根据文件名长度决定是否添加渐变遮罩
+            if (name.length > 50) {
+                fileName.classList.add('long');
+            } else {
+                fileName.classList.remove('long');
+            }
+            fileModified.textContent = `最后修改时间: ${modifiedDate.toLocaleString()}`;
+            
+            // 淡出当前图片
+            mainImage.classList.remove('show');
+            blurBackground.classList.remove('show');
+            
+            // 设置主图片
+            setTimeout(() => {
+                mainImage.src = url;
+                mainImage.onload = () => {
+                    // 更新模糊背景
+                    blurBackground.style.backgroundImage = `url(${url})`;
+                    blurBackground.style.filter = 'blur(20px) brightness(0.5)';
+                    
+                    // 根据图片宽高比调整显示方式
+                    const naturalWidth = mainImage.naturalWidth;
+                    const naturalHeight = mainImage.naturalHeight;
+                    const aspectRatio = naturalWidth / naturalHeight;
+                    
+                    // 超长图处理（高度远大于宽度）
+                    if (aspectRatio < 0.5) {
+                        mainImage.style.width = 'auto';
+                        mainImage.style.height = 'calc(100vh - 160px)';
+                        scrollableImage.style.overflow = 'auto';
+                    } 
+                    // 超宽图处理（宽度远大于高度）
+                    else if (aspectRatio > 2) {
+                        mainImage.style.width = 'calc(100% - 40px)';
+                        mainImage.style.height = 'auto';
+                        scrollableImage.style.overflow = 'auto';
+                    } 
+                    // 正常比例图片
+                    else {
+                        mainImage.style.width = 'auto';
+                        mainImage.style.height = 'auto';
+                        scrollableImage.style.overflow = 'hidden';
+                    }
+                    
+                    // 淡入新图片
+                    mainImage.classList.add('show');
+                    blurBackground.classList.add('show');
+                };
+            }, 300);
+        }
+
+        // 添加到历史记录
+        function addToHistory(imageInfo) {
+            // 检查是否已在历史记录中
+            const existsIndex = historyImages.findIndex(item => item.name === imageInfo.name);
+            if (existsIndex !== -1) {
+                // 如果已存在，先移除旧记录
+                historyImages.splice(existsIndex, 1);
+            }
+            
+            // 添加到历史记录开头
+            historyImages.unshift({
+                name: imageInfo.name,
+                handle: imageInfo.handle,
+                lastModified: imageInfo.lastModified
+            });
+            
+            // 限制极历史记录长度
+            if (historyImages.length > MAX_HISTORY) {
+                historyImages.pop();
+            }
+            
+            // 更新历史记录UI
+            updateHistoryUI();
+        }
+
+        // 更新历史记录UI
+        async function updateHistoryUI() {
+            const historyItems = [historyItem1, history极Item2, historyItem3];
+            
+            for (let i = 0; i < MAX_HISTORY; i++) {
+                const item = historyItems[i];
+                if (i < historyImages.length) {
+                    const imageInfo = historyImages[i];
+                    const file = await imageInfo.handle.getFile();
+                    const url = URL.createObjectURL(file);
+                    
+                    // 创建缩略图
+                    if (!item.querySelector('img')) {
+                        const img = document.createElement('img');
+                        item.appendChild(img);
+                    }
+                    
+                    item.querySelector('img').src = url;
+                    item.classList.remove('hidden');
+                } else {
+                    item.classList.add('hidden');
+                }
+            }
+        }
+
+        // 导航历史记录
+        async function navigateHistory(index) {
+            if (index >= historyImages.length) return;
+            
+            const imageInfo = historyImages[index];
+            const file = await imageInfo.handle.getFile();
+            const url = URL.createObjectURL(file);
+            
+            // 显示图片
+            displayImage(url, imageInfo.name, new Date(imageInfo.lastModified));
+            
+            // 更新当前图片索引
+            currentImageIndex = imageFiles.findIndex(file => file.name === imageInfo.name);
+            
+            // 管理缓存
+            manageCache();
+        }
+
+        // 管理图片缓存
+        function manageCache() {
+            // 简单实现：当缓存超过限制时，移除最旧的URL
+            if (imageCache.size > MAX_CACHE极) {
+                const oldestKey = imageCache.keys().next().value;
+                URL.revokeObjectURL(imageCache.get(oldestKey));
+                imageCache.delete(oldestKey);
+            }
+        }
+
+        // 删除当前图片
+        async function deleteCurrentImage() {
+            if (currentImageIndex < 0 || currentImageIndex >= imageFiles.length) return;
+            
+            try {
+                const imageInfo = imageFiles[currentImageIndex];
+                
+                // 保存最后删除的图片信息（用于撤销）
+                lastAction = {
+                    type: 'delete',
+                    index: currentImageIndex,
+                    info: imageInfo
+                };
+                
+                // 获取或创建回收站文件夹
+                let trashHandle;
+                try {
+                    trashHandle = await directoryHandle.getDirectoryHandle('.MediaTrash', { create: true });
+                } catch (error) {
+                    console.error('创建回收站文件夹失败:', error);
+                    return;
+                }
+                
+                // 移动文件到回收站
+                const sourceFile = imageFiles[currentImageIndex];
+                const sourceHandle = sourceFile.handle;
+                
+                // 复制文件到极回收站
+                const source = await sourceHandle.getFile();
+                const newFileHandle = await trashHandle.getFileHandle(sourceFile.name, { create: true });
+                const writable = await newFileHandle.createWritable();
+                await writable.write(source);
+                await writable.close();
+                
+                // 从原位置删除文件
+                await directoryHandle.removeEntry(source极File.name);
+                
+                // 从列表中移除
+                imageFiles.splice(currentImageIndex, 1);
+                
+                // 显示删除成功的toast
+                showToast('delete', '图片已删除');
+                
+                // 显示下一张图片
+                if (imageFiles.length > 0) {
+                    showNextRandomImage();
+                } else {
+                    alert('文件夹中没有更多图片');
+                }
+            } catch (error) {
+                console.error('删除文件失败:', error);
+                alert('删除文件失败: ' + error.message);
+            }
+        }
+
+        // 查看大图
+        async function viewLargeImage() {
+            if (currentImageIndex < 0) return;
+            
+            try {
+                const file = await imageFiles[currentImageIndex].handle.getFile();
+                const url = URL.createObjectURL(file);
+                window.open(url, '_blank');
+            } catch (error) {
+                console.error('查看大图失败:', error);
+            }
+        }
+
+        // 添加到收藏
+        async function addToFavorites() {
+            if (currentImageIndex < 0) return;
+            
+            try {
+                // 获取或创建Collections文件夹
+                let collectionsHandle;
+                try {
+                    collectionsHandle = await directoryHandle.getDirectoryHandle('Collections', { create: true });
+                } catch (error) {
+                    console.error('创建Collections文件夹失败:', error);
+                    return;
+                }
+                
+                // 移动文件
+                const sourceFile = imageFiles[currentImageIndex];
+                const sourceHandle = sourceFile.handle;
+                
+                // 复制文件到Collections文件夹
+                const source = await sourceHandle.getFile();
+                const newFileHandle = await collectionsHandle.getFileHandle(sourceFile.name, { create: true });
+                const writable = await newFileHandle.createWritable();
+                await writable.write(source);
+                await writable.close();
+                
+                // 从原位置删除文件
+                await directoryHandle.removeEntry(sourceFile.name);
+                
+                // 保存最后操作的图片信息（用于撤销）
+                lastAction = {
+                    type: 'favorite',
+                    index: currentImageIndex,
+                    info: sourceFile,
+                    originalPath: sourceFile.name,
+                    newPath: 'Collections/' + sourceFile.name
+                };
+                
+                // 从列表中移除
+                imageFiles.splice(currentImageIndex, 1);
+                
+                // 显示收藏成功的toast
+                showToast('favorite', '图片已收藏');
+                
+                // 显示下一张图片
+                if (imageFiles.length > 0) {
+                    showNextRandomImage();
+                }
+            } catch (error) {
+                console.error('添加到收藏失败:', error);
+                alert('添加到收藏失败: ' + error.message);
+            }
+        }
+
+        // 显示Toast通知
+        function showToast(type, message) {
+            // 设置图标
+            if (type === 'delete') {
+                toastIcon.innerHTML = `
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="#e53935">
+                        <path d="M6 19c0 1.1.9 2 2 2h8极 c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>
+                    </svg>
+                `;
+            } else {
+                toastIcon.innerHTML = `
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="#4a8cff">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.极 42 22 8.5c极 0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+                    </svg>
+                `;
+            }
+            
+            // 设置消息
+            toastMessage.textContent = message;
+            
+           极 // 显示Toast
+            toastContainer.classList.add('show');
+            
+            // 清除之前的超时
+            if (toastTimeout) clearTimeout(toastTimeout);
+            
+            // 设置3秒后自动隐藏
+            toastTimeout = setTimeout(() => {
+                toastContainer.classList.remove('show');
+            }, 3000);
+        }
+
+        // 撤销最后操作
+        async function undoLastAction() {
+            if (!lastAction) return;
+            
+            try {
+                // 隐藏toast
+                toastContainer.classList.remove('show');
+                
+                // 显示加载动画
+                loadingContainer.classList.add('show');
+                
+                // 开始刷新图片循环
+                startRefreshLoop();
+                
+                // 延迟500毫秒后执行撤销操作
+                setTimeout(async () => {
+                    if (lastAction.type === 'delete') {
+                        await undoDelete();
+                    } else if (lastAction.type === 'favorite') {
+                        await undoFavorite();
+                    }
+                    
+                    // 停止刷新循环
+                    stopRefreshLoop();
+                    
+                    // 隐藏加载动画
+                    loadingContainer.classList.remove('show');
+                }, 500);
+            } catch (error) {
+                console.error('撤销操作失败:', error);
+                loadingContainer.classList.remove('show');
+                stopRefreshLoop();
+            }
+        }
+
+        // 开始刷新图片循环
+        function startRefreshLoop() {
+            // 清除之前的刷新循环
+            stopRefreshLoop();
+            
+            // 每50ms刷新一次图片，持续1000ms
+            let refreshCount = 0;
+            refreshInterval = setInterval(() => {
+                refreshCount++;
+                const currentSrc = mainImage.src;
+                if (currentSrc) {
+                    // 强制刷新图片
+                    mainImage.src = '';
+                    mainImage.src = currentSrc;
+                }
+                
+                // 刷新20次后停止（1000ms）
+                if (refreshCount >= 20) {
+                    stopRefreshLoop();
+                }
+            }, 50);
+        }
+
+        // 停止刷新图片循环
+        function stopRefreshLoop() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        // 撤销删除操作
+        async function undoDelete() {
+            try {
+                // 获取回收站文件夹
+                const trashHandle = await directoryHandle.getDirectoryHandle('.MediaTrash');
+                
+                // 将文件移回原位置
+                const file = await trashHandle.getFileHandle(lastAction.info.name);
+                const fileContent = await file.getFile();
+                const newFileHandle = await directoryHandle.getFileHandle(lastAction.info.name, { create: true });
+                const writable = await newFileHandle.createWritable();
+                await writable.write(fileContent);
+                await writable.close();
+                
+                // 从回收站中删除
+                await trashHandle.removeEntry(lastAction.info.name);
+                
+                // 重新添加到文件列表
+                imageFiles.splice(lastAction.index, 0, lastAction.info);
+                
+                // 重新添加到历史记录
+                addToHistory(lastAction.info);
+                
+                // 显示被删除的图片
+                currentImageIndex = lastAction.index;
+                const url = URL.createObjectURL(fileContent);
+                displayImage(url, lastAction.info.name, new Date(lastAction.info.lastModified));
+            } catch (error) {
+                console.error('撤销删除操作失败:', error);
+            } finally {
+                lastAction = null;
+            }
+        }
+
+        // 撤销收藏操作
+        async function undoFavorite() {
+            try {
+                // 获取Collections文件夹
+                const collectionsHandle = await directoryHandle.getDirectoryHandle('Collections');
+                
+                // 将文件移回原位置
+                const file = await collectionsHandle.getFileHandle(lastAction.info.name);
+                const fileContent = await file极.getFile();
+                const newFileHandle = await directoryHandle.getFileHandle(lastAction.info.name, { create: true });
+                const writable = await newFileHandle.createWritable();
+                await writable.write(fileContent);
+                await writable.close();
+                
+                // 从Collections中删除
+                await collectionsHandle.removeEntry(lastAction.info.name);
+                
+                // 重新添加到文件列表
+                imageFiles.splice(lastAction.index, 0极, lastAction.info);
+                
+                // 重新添加到历史记录
+                addToHistory(lastAction.info);
+                
+                // 显示被收藏的极图片
+                currentImageIndex = lastAction.index;
+                const url = URL.createObjectURL(fileContent);
+                displayImage(url, lastAction.info.name, new Date(lastAction.info.lastModified));
+            } catch (error) {
+                console.error('撤销收藏操作失败:', error);
+            } finally {
+                lastAction = null;
+            }
+        }
+
+        // 加载设置
+        function loadSettings() {
+            const savedSettings = localStorage.getItem('imageViewerSettings');
+            if (savedSettings) {
+                try {
+                    settings = JSON.parse(savedSettings);
+                    tabletModeToggle.checked = settings.tabletMode;
+                    subfoldersToggle.checked = settings.includeSubfolders;
+                    applyTabletMode();
+                } catch (e) {
+                    console.error('加载设置失败:', e);
+                }
+            }
+        }
+
+        // 保存设置
+        function saveSettings() {
+            localStorage.setItem('imageViewerSettings', JSON.stringify(settings));
+        }
+
+        // 应用平板模式
+        function applyTabletMode() {
+            if (settings.tabletMode) {
+                document.body.classList.add('tablet-mode');
+                // 显示平板模式浮动按钮
+                tabletActionButtons.style.display = 'flex';
+                // 隐藏底部操作栏
+                document.querySelector('.footer').style.display = 'none

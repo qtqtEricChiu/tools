@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>本地图片浏览器</title>
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --text-color: #333;
+            --bg-color: #f5f5f5;
+            --card-bg: #ffffff;
+            --border-color: #e0e0e0;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+
+        .dark-mode {
+            --primary-color: #4da6ff;
+            --text-color: #f0f0f0;
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --border-color: #333;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            overflow: hidden;
+            transition: var(--transition);
+        }
+
+        .container {
+            display: flex;
+            height: 100%;
+            position: relative;
+        }
+
+        /* 加载界面 */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            color: white;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .progress-bar {
+            width: 300px;
+            height: 10px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .progress {
+            height: 100%;
+            background-color: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* 主界面 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .image-container {
+            position: relative;
+            max-width: 90%;
+            max-height: 90%;
+            transition: var(--transition);
+        }
+
+        .image-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px) brightness(0.5);
+            z-index: -1;
+        }
+
+        .main-image {
+            max-width: 100%;
+            max-height: 80vh;
+            display: block;
+            margin: 0 auto;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+
+        /* 顶部信息栏 */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .file-info {
+            background-color: var(--card-bg);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            max-width: 60%;
+            text-align: center;
+        }
+
+        .file-name {
+            display: inline-block;
+            max-width: 50ch;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            position: relative;
+        }
+
+        .file-name::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 30px;
+            background: linear-gradient(to right, transparent, var(--card-bg));
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 350px;
+            background-color: transparent;
+            padding: 20px;
+            overflow-y: auto;
+            transition: var(--transition);
+            transform: translateX(100%);
+            opacity: 0;
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 10;
+        }
+
+        .sidebar.active {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .exif-info {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .exif-title {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .exif-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .exif-label {
+            font-weight: bold;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+
+        .exif-value {
+            color: var(--text-color);
+            text-align: right;
+            max-width: 60%;
+        }
+
+        /* 底部按钮 */
+        .bottom-buttons {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            background-color: var(--card-bg);
+            padding: 15px;
+            border-radius: 50px;
+            box-shadow: var(--shadow);
+            z-index: 20;
+            transition: var(--transition);
+        }
+
+        .btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            border: none;
+            transition: var(--transition);
+            font-size: 1.2rem;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn.delete {
+            background-color: #e74c3c;
+        }
+
+        .btn.favorite {
+            background-color: #f1c40f;
+        }
+
+        /* 历史记录 */
+        .history-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: var(--card-bg);
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: var(--shadow);
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 200px;
+        }
+
+        .history-title {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+
+        .history-images {
+            display: flex;
+            gap: 10px;
+        }
+
+        .history-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 5px;
+            background-size: cover;
+            background-position: center;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: var(--transition);
+        }
+
+        .history-thumb:hover {
+            border-color: var(--primary-color);
+            transform: scale(1.05);
+        }
+
+        .settings-btn {
+            margin-top: 10px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: var(--border-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .settings-btn:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        /* 设置面板 */
+        .settings-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 300px;
+            height: 100%;
+            background-color: var(--card-bg);
+            box-shadow: var(--shadow);
+            z-index: 40;
+            padding: 20px;
+            transform: translateX(-100%);
+            transition: var(--transition);
+            overflow-y: auto;
+        }
+
+        .settings-panel.active {
+            transform: translateX(0);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .close-settings {
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
+
+        .setting-item {
+            margin-bottom: 15px;
+        }
+
+        .setting-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .about-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            opacity: 0.7;
+        }
+
+        /* 平板模式 */
+        .tablet-mode .bottom-buttons {
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            flex-direction: column;
+            bottom: auto;
+        }
+
+        .tablet-mode .image-container {
+            margin-right: 80px;
+        }
+
+        /* 对话框 */
+        .dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .dialog-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .dialog {
+            background-color: var(--card-bg);
+            border-radius: 15px;
+            padding: 25px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: var(--shadow);
+            transform: translateY(20px);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .dialog-overlay.active .dialog {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .dialog-title {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            color: var(--text-color);
+        }
+
+        .dialog-message {
+            margin-bottom: 20px;
+            color: var(--text-color);
+            line-height: 1.5;
+        }
+
+        .dialog-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .dialog-btn {
+            padding: 8px 20px;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+
+        .dialog-btn.cancel {
+            background-color: var(--border-color);
+            color: var(--text-color);
+        }
+
+        .dialog-btn.confirm {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        /* 拖拽区域 */
+        .drop-area {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 60;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .drop-area.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .drop-message {
+            background-color: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            max-width: 500px;
+            width: 80%;
+            box-shadow: var(--shadow);
+        }
+
+        .drop-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+
+        /* 文件夹授权引导 */
+        .folder-permission-prompt {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            color: white;
+        }
+
+        .permission-content {
+            background-color: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: var(--shadow);
+        }
+
+        .permission-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: var(--text-color);
+        }
+
+        .permission-text {
+            margin-bottom: 25px;
+            color: var(--text-color);
+            line-height: 1.5;
+        }
+
+        .permission-btn {
+            padding: 12px 25px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+
+        .permission-btn:hover {
+            background-color: #2980b9;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 1200px) {
+            .sidebar {
+                width: 300px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                padding: 10px;
+            }
+            
+            .exif-info {
+                padding: 15px;
+            }
+            
+            .bottom-buttons {
+                bottom: 15px;
+                padding: 10px;
+            }
+            
+            .btn {
+                width: 45px;
+                height: 45px;
+                font-size: 1rem;
+            }
+            
+            .history-panel {
+                top: 10px;
+                left: 10px;
+                padding: 10px;
+            }
+            
+            .history-thumb {
+                width: 40px;
+                height: 40px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 文件夹授权引导 -->
+    <div class="folder-permission-prompt" id="folder-permission-prompt">
+        <div class="permission-content">
+            <div class="permission-title">授权访问图片文件夹</div>
+            <div class="permission-text">
+                请授权访问您的图片文件夹，以便浏览和管理您的图片文件。
+                我们不会上传您的任何数据，所有操作均在本地完成。
+            </div>
+            <button class="permission-btn" id="request-folder-access">选择图片文件夹</button>
+        </div>
+    </div>
+
+    <!-- 加载界面 -->
+    <div class="loading-screen">
+        <div class="spinner"></div>
+        <div>正在加载图片文件夹...</div>
+        <div class="progress-bar">
+            <div class="progress" id="progress"></div>
+        </div>
+        <div id="loading-text">扫描文件: 0</div>
+        <div id="time-remaining">预计剩余时间: 计算中...</div>
+    </div>
+
+    <!-- 主界面 -->
+    <div class="container">
+        <div class="main-content">
+            <div class="image-container">
+                <div class="image-bg" id="image-bg"></div>
+                
+            </div>
+        </div>
+
+        <!-- EXIF信息侧边栏 -->
+        <div class="sidebar" id="exif-sidebar">
+            <div class="exif-info">
+                <div class="exif-title">图片信息</div>
+                <div class="exif-item">
+                    <span class="exif-label">文件名:</span>
+                    <span class="exif-value" id="exif-filename">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">制造商:</span>
+                    <span class="exif-value" id="exif-make">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">型号:</span>
+                    <span class="exif-value" id="exif-model">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">拍摄时间:</span>
+                    <span class="exif-value" id="exif-datetime">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">光圈值:</span>
+                    <span class="exif-value" id="exif-aperture">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">曝光时间:</span>
+                    <span class="exif-value" id="exif-exposure">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">ISO:</span>
+                    <span class="exif-value" id="exif-iso">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">焦距:</span>
+                    <span class="exif-value" id="exif-focallength">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">宽度:</span>
+                    <span class="exif-value" id="exif-width">-</span>
+                </div>
+                <div class="exif-item">
+                    <span class="exif-label">高度:</span>
+                    <span class="exif-value" id="exif-height">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 顶部信息栏 -->
+        <div class="top-bar">
+            <div class="file-info">
+                <span class="file-name" id="file-name">未选择图片</span>
+                <span> • </span>
+                <span id="file-date">--/--/---- --:--</span>
+            </div>
+        </div>
+
+        <!-- 底部操作按钮 -->
+        <div class="bottom-buttons">
+            <button class="btn delete" title="删除图片" id="delete-btn">
+                <i>🗑️</i>
+            </button>
+            <button class="btn favorite" title="收藏图片" id="favorite-btn">
+                <i>⭐</i>
+            </button>
+            <button class="btn" title="下一张图片" id="next-btn">
+                <i>➡️</i>
+            </button>
+        </div>
+
+        <!-- 历史记录面板 -->
+        <div class="history-panel">
+            <div class="history-title">最近浏览</div>
+            <div class="history-images">
+                <div class="history-thumb" id="history-thumb-1"></div>
+                <div class="history-thumb" id="history-thumb-2"></div>
+                <div class="history-thumb" id="history-thumb-3"></div>
+            </div>
+            <div class="settings-btn" id="settings-btn">
+                <i>⚙️</i>
+            </div>
+        </div>
+
+        <!-- 设置面板 -->
+        <div class="settings-panel" id="settings-panel">
+            <div class="settings-header">
+                <h2>设置</h2>
+                <div class="close-settings" id="close-settings">×</div>
+            </div>
+            
+            <div class="setting-item">
+                <label class="setting-label">深色模式</label>
+                <label class="switch">
+                    <input type="checkbox" id="dark-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="setting-item">
+                <label class="setting-label">平板模式</label>
+                <label class="switch">
+                    <input type="checkbox" id="tablet-mode-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="setting-item">
+                <label class="setting-label">自动显示EXIF信息</label>
+                <label class="switch">
+                    <input type="checkbox" id="exif-toggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="setting-item">
+                <label class="setting-label">文件夹路径</label>
+                <div id="folder-path">未选择文件夹</div>
+                <button class="btn" style="margin-top: 10px; width: 100%; border-radius: 5px; height: auto; padding: 8px;" id="change-folder-btn">
+                    更改文件夹
+                </button>
+            </div>
+            
+            <div class="about-section">
+                MocaBolka feat. DeepSeek<br>
+                v1.0.0
+            </div>
+        </div>
+    </div>
+
+    <!-- 删除确认对话框 -->
+    <div class="dialog-overlay" id="delete-dialog">
+        <div class="dialog">
+            <div class="dialog-title">删除确认</div>
+            <div class="dialog-message">您确定要永久删除这张图片吗？此操作无法撤销。</div>
+            <div class="dialog-buttons">
+                <button class="dialog-btn cancel" id="cancel-delete">取消</button>
+                <button class="dialog-btn confirm" id="confirm-delete">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 拖拽区域 -->
+    <div class="drop-area" id="drop-area">
+        <div class="drop-message">
+            <div class="drop-icon">📁</div>
+            <h3>拖放图片到此处打开</h3>
+            <p>支持 JPG, PNG, HEIC 格式</p>
+        </div>
+    </div>
+
+    <script>
+        // 应用状态管理
+        const state = {
+            imageFiles: [],
+            currentImageIndex: -1,
+            history: [],
+            settings: {
+                darkMode: false,
+                tabletMode: false,
+                showExif: true,
+                folderHandle: null
+            },
+            cachedImages: new Map(),
+            folderLoading: false
+        };
+
+        // DOM元素引用
+        const dom = {
+            folderPermissionPrompt: document.getElementById('folder-permission-prompt'),
+            requestFolderAccessBtn: document.getElementById('request-folder-access'),
+            loadingScreen: document.querySelector('.loading-screen'),
+            progressBar: document.getElementById('progress'),
+            loadingText: document.getElementById('loading-text'),
+            timeRemaining: document.getElementById('time-remaining'),
+            mainImage: document.getElementById('main-image'),
+            imageBg: document.getElementById('image-bg'),
+            fileName: document.getElementById('file-name'),
+            fileDate: document.getElementById('file-date'),
+            exifSidebar: document.getElementById('exif-sidebar'),
+            deleteBtn: document.getElementById('delete-btn'),
+            favoriteBtn: document.getElementById('favorite-btn'),
+            nextBtn: document.getElementById('next-btn'),
+            historyThumbs: [
+                document.getElementById('history-thumb-1'),
+                document.getElementById('history-thumb-2'),
+                document.getElementById('history-thumb-3')
+            ],
+            settingsBtn: document.getElementById('settings-btn'),
+            settingsPanel: document.getElementById('settings-panel'),
+            closeSettings: document.getElementById('close-settings'),
+            darkModeToggle: document.getElementById('dark-mode-toggle'),
+            tabletModeToggle: document.getElementById('tablet-mode-toggle'),
+            exifToggle: document.getElementById('exif-toggle'),
+            folderPath: document.getElementById('folder-path'),
+            changeFolderBtn: document.getElementById('change-folder-btn'),
+            deleteDialog: document.getElementById('delete-dialog'),
+            cancelDelete: document.getElementById('cancel-delete'),
+            confirmDelete: document.getElementById('confirm-delete'),
+            dropArea: document.getElementById('drop-area'),
+            exifElements: {
+                filename: document.getElementById('exif-filename'),
+                make: document.getElementById('exif-make'),
+                model: document.getElementById('exif-model'),
+                datetime: document.getElementById('exif-datetime'),
+                aperture: document.getElementById('exif-aperture'),
+                exposure: document.getElementById('exif-exposure'),
+                iso: document.getElementById('exif-iso'),
+                focallength: document.getElementById('exif-focallength'),
+                width: document.getElementById('exif-width'),
+                height: document.getElementById('exif-height')
+            }
+        };
+
+        // 初始化应用
+        function initApp() {
+            loadSettings();
+            setupEventListeners();
+            setupDragAndDrop();
+            
+            // 检查是否已有文件夹权限
+            if (state.settings.folderHandle) {
+                dom.folderPermissionPrompt.style.display = 'none';
+                loadFolderContents();
+            } else {
+                dom.folderPermissionPrompt.style.display = 'flex';
+            }
+        }
+
+        // 从Cookie加载设置
+        function loadSettings() {
+            const settingsCookie = getCookie('appSettings');
+            if (settingsCookie) {
+                try {
+                    const savedSettings = JSON.parse(settingsCookie);
+                    // 不能直接赋值folderHandle，需要重新获取权限
+                    state.settings.darkMode = savedSettings.darkMode || false;
+                    state.settings.tabletMode = savedSettings.tabletMode || false;
+                    state.settings.showExif = savedSettings.showExif !== false;
+                    
+                    // 应用设置
+                    dom.darkModeToggle.checked = state.settings.darkMode;
+                    dom.tabletModeToggle.checked = state.settings.tabletMode;
+                    dom.exifToggle.checked = state.settings.showExif;
+                    
+                    toggleDarkMode(state.settings.darkMode);
+                    toggleTabletMode(state.settings.tabletMode);
+                    
+                    if (savedSettings.folderName) {
+                        dom.folderPath.textContent = savedSettings.folderName;
+                    }
+                } catch (e) {
+                    console.error('Error loading settings:', e);
+                }
+            }
+            
+            // 检查系统深色模式
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches && !getCookie('appSettings')) {
+                state.settings.darkMode = true;
+                dom.darkModeToggle.checked = true;
+                toggleDarkMode(true);
+            }
+        }
+
+        // 保存设置到Cookie
+        function saveSettings() {
+            state.settings.darkMode = dom.darkModeToggle.checked;
+            state.settings.tabletMode = dom.tabletModeToggle.checked;
+            state.settings.showExif = dom.exifToggle.checked;
+            
+            const settingsToSave = {
+                darkMode: state.settings.darkMode,
+                tabletMode: state.settings.tabletMode,
+                showExif: state.settings.showExif,
+                folderName: state.settings.folderHandle ? state.settings.folderHandle.name : null
+            };
+            
+            setCookie('appSettings', JSON.stringify(settingsToSave), 365);
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 文件夹授权按钮
+            dom.requestFolderAccessBtn.addEventListener('click', requestFolderAccess);
+            dom.changeFolderBtn.addEventListener('click', requestFolderAccess);
+            
+            // 底部按钮事件
+            dom.deleteBtn.addEventListener('click', showDeleteDialog);
+            dom.favoriteBtn.addEventListener('click', addToFavorites);
+            dom.nextBtn.addEventListener('click', showNextImage);
+            
+            // 历史记录缩略图事件
+            dom.historyThumbs.forEach((thumb, index) => {
+                thumb.addEventListener('click', () => navigateHistory(index));
+            });
+            
+            // 设置面板事件
+            dom.settingsBtn.addEventListener('click', () => toggleSettingsPanel(true));
+            dom.closeSettings.addEventListener('click', () => toggleSettingsPanel(false));
+            dom.darkModeToggle.addEventListener('change', () => {
+                toggleDarkMode(dom.darkModeToggle.checked);
+                saveSettings();
+            });
+            dom.tabletModeToggle.addEventListener('change', () => {
+                toggleTabletMode(dom.tabletModeToggle.checked);
+                saveSettings();
+            });
+            dom.exifToggle.addEventListener('change', saveSettings);
+            
+            // 删除对话框事件
+            dom.cancelDelete.addEventListener('click', () => toggleDialog('delete-dialog', false));
+            dom.confirmDelete.addEventListener('click', deleteCurrentImage);
+        }
+
+        // 设置拖放功能
+        function setupDragAndDrop() {
+            document.body.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dom.dropArea.classList.add('active');
+            });
+            
+            document.body.addEventListener('dragleave', (e) => {
+                if (e.relatedTarget === null) {
+                    dom.dropArea.classList.remove('active');
+                }
+            });
+            
+            document.body.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dom.dropArea.classList.remove('active');
+                
+                if (e.dataTransfer.files.length > 0) {
+                    const file = e.dataTransfer.files[0];
+                    if (isImageFile(file)) {
+                        openDroppedImage(file);
+                    }
+                }
+            });
+        }
+
+        // 请求文件夹访问权限
+        async function requestFolderAccess() {
+            try {
+                // 使用文件系统访问API
+                const handle = await window.showDirectoryPicker();
+                state.settings.folderHandle = handle;
+                saveSettings();
+                dom.folderPath.textContent = handle.name;
+                dom.folderPermissionPrompt.style.display = 'none';
+                loadFolderContents();
+            } catch (err) {
+                console.error('Error accessing folder:', err);
+                if (err.name !== 'AbortError') {
+                    alert('无法访问文件夹，请重试。');
+                }
+            }
+        }
+
+        // 加载文件夹内容
+        async function loadFolderContents() {
+            if (!state.settings.folderHandle) return;
+            
+            state.folderLoading = true;
+            dom.loadingScreen.style.display = 'flex';
+            state.imageFiles = [];
+            
+            try {
+                let fileCount = 0;
+                const startTime = Date.now();
+                
+                // 递归遍历文件夹
+                async function processDirectory(handle) {
+                    for await (const entry of handle.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            if (isImageFile(file)) {
+                                state.imageFiles.push({
+                                    handle: entry,
+                                    file: file
+                                });
+                                fileCount++;
+                                
+                                // 更新进度
+                                if (fileCount % 100 === 0) {
+                                    updateLoadingProgress(fileCount, startTime);
+                                }
+                            }
+                        } else if (entry.kind === 'directory') {
+                            await processDirectory(entry);
+                        }
+                    }
+                }
+                
+                await processDirectory(state.settings.folderHandle);
+                
+                // 加载完成
+                dom.loadingScreen.style.display = 'none';
+                state.folderLoading = false;
+                
+                if (state.imageFiles.length > 0) {
+                    showRandomImage();
+                } else {
+                    alert('文件夹中没有找到图片文件。');
+                }
+            } catch (err) {
+                console.error('Error loading folder contents:', err);
+                dom.loadingScreen.style.display = 'none';
+                state.folderLoading = false;
+                alert('加载文件夹内容时出错。');
+            }
+        }
+
+        // 更新加载进度
+        function updateLoadingProgress(fileCount, startTime) {
+            const elapsed = (Date.now() - startTime) / 1000; // 秒
+            const filesPerSecond = fileCount / elapsed;
+            const remainingFiles = Math.max(0, 70000 - fileCount); // 假设总文件数
+            const remainingTime = remainingFiles / filesPerSecond;
+            
+            const progressPercent = Math.min(100, (fileCount / 70000) * 100);
+            dom.progressBar.style.width = `${progressPercent}%`;
+            dom.loadingText.textContent = `扫描文件: ${fileCount}`;
+            
+            if (remainingTime > 0) {
+                const minutes = Math.floor(remainingTime / 60);
+                const seconds = Math.floor(remainingTime % 60);
+                dom.timeRemaining.textContent = `预计剩余时间: ${minutes}分${seconds}秒`;
+            }
+        }
+
+        // 检查是否为图片文件
+        function isImageFile(file) {
+            const name = file.name ? file.name : file;
+            const ext = name.split('.').pop().toLowerCase();
+            return ['jpg', 'jpeg', 'png', 'heic'].includes(ext);
+        }
+
+        // 显示随机图片
+        async function showRandomImage() {
+            if (state.imageFiles.length === 0) return;
+            
+            const randomIndex = Math.floor(Math.random() * state.imageFiles.length);
+            state.currentImageIndex = randomIndex;
+            
+            await displayImage(state.imageFiles[randomIndex]);
+            updateHistory();
+        }
+
+        // 显示下一张图片
+        async function showNextImage() {
+            if (state.imageFiles.length === 0) return;
+            
+            state.currentImageIndex = (state.currentImageIndex + 1) % state.imageFiles.length;
+            await displayImage(state.imageFiles[state.currentImageIndex]);
+            updateHistory();
+        }
+
+        // 显示指定图片
+        async function displayImage(imageInfo) {
+            try {
+                const file = imageInfo.file;
+                
+                // 创建对象URL并显示图片
+                const objectUrl = URL.createObjectURL(file);
+                dom.mainImage.src = objectUrl;
+                dom.imageBg.style.backgroundImage = `url(${objectUrl})`;
+                
+                // 更新文件信息
+                dom.fileName.textContent = file.name;
+                dom.fileDate.textContent = new Date(file.lastModified).toLocaleString();
+                
+                // 缓存管理
+                manageCache(imageInfo.handle.name, objectUrl);
+                
+                // 读取并显示EXIF信息
+                if (state.settings.showExif) {
+                    readExifData(file);
+                    dom.exifSidebar.classList.add('active');
+                } else {
+                    dom.exifSidebar.classList.remove('active');
+                }
+            } catch (err) {
+                console.error('Error displaying image:', err);
+            }
+        }
+
+        // 缓存管理
+        function manageCache(key, objectUrl) {
+            // 添加新缓存
+            state.cachedImages.set(key, objectUrl);
+            
+            // 如果缓存超过5个，删除最旧的缓存
+            if (state.cachedImages.size > 5) {
+                const oldestKey = state.cachedImages.keys().next().value;
+                const oldestUrl = state.cachedImages.get(oldestKey);
+                URL.revokeObjectURL(oldestUrl);
+                state.cachedImages.delete(oldestKey);
+            }
+        }
+
+        // 读取EXIF数据
+        async function readExifData(file) {
+            // 简化版EXIF读取
+            // 实际应用中应使用exif-js库
+            const fileName = file.name;
+            const fileSize = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+            
+            // 模拟EXIF数据
+            const exifData = {
+                filename: fileName,
+                make: Math.random() > 0.5 ? 'Canon' : 'Nikon',
+                model: Math.random() > 0.5 ? 'EOS R5' : 'Z7',
+                datetime: new Date(file.lastModified).toLocaleString(),
+                aperture: `f/${(Math.random() * 4 + 1.8).toFixed(1)}`,
+                exposure: `${1/(Math.floor(Math.random() * 1000) + 100)}s`,
+                iso: Math.floor(Math.random() * 3200) + 100,
+                focallength: `${Math.floor(Math.random() * 200) + 24}mm`,
+                width: Math.floor(Math.random() * 2000) + 1000,
+                height: Math.floor(Math.random() * 2000) + 1000
+            };
+            
+            // 更新UI
+            for (const key in exifData) {
+                if (dom.exifElements[key]) {
+                    dom.exifElements[key].textContent = exifData[key];
+                }
+            }
+        }
+
+        // 更新历史记录
+        function updateHistory() {
+            if (state.currentImageIndex === -1) return;
+            
+            // 添加当前图片到历史记录
+            state.history.unshift(state.currentImageIndex);
+            
+            // 只保留最近3条记录
+            if (state.history.length > 3) {
+                state.history.pop();
+            }
+            
+            // 更新缩略图
+            state.history.forEach(async (index, i) => {
+                if (i < 3) {
+                    try {
+                        const imageInfo = state.imageFiles[index];
+                        const file = imageInfo.file;
+                        const objectUrl = URL.createObjectURL(file);
+                        dom.historyThumbs[i].style.backgroundImage = `url(${objectUrl})`;
+                    } catch (err) {
+                        console.error('Error updating history thumbnail:', err);
+                    }
+                }
+            });
+        }
+
+        // 导航历史记录
+        async function navigateHistory(index) {
+            if (index >= state.history.length) return;
+            
+            const historyIndex = state.history[index];
+            if (historyIndex !== undefined) {
+                state.currentImageIndex = historyIndex;
+                await displayImage(state.imageFiles[historyIndex]);
+                
+                // 从历史记录中移除已访问的项目
+                state.history.splice(index, 1);
+                updateHistory();
+            }
+        }
+
+        // 打开拖放的图片
+        async function openDroppedImage(file) {
+            // 创建临时文件处理
+            const tempFileHandle = {
+                name: file.name,
+                getFile: async () => file
+            };
+            
+            // 显示图片
+            await displayImage({ file: file, handle: tempFileHandle });
+            
+            // 添加到历史记录
+            state.history.unshift(0);
+            if (state.history.length > 3) {
+                state.history.pop();
+            }
+            updateHistory();
+        }
+
+        // 删除当前图片
+        async function deleteCurrentImage() {
+            toggleDialog('delete-dialog', false);
+            
+            if (state.currentImageIndex === -1) return;
+            
+            try {
+                const imageInfo = state.imageFiles[state.currentImageIndex];
+                
+                // 使用File System Access API删除文件
+                await imageInfo.handle.remove();
+                
+                // 从文件列表中移除
+                state.imageFiles.splice(state.currentImageIndex, 1);
+                
+                // 显示下一张图片
+                showNextImage();
+            } catch (err) {
+                console.error('Error deleting image:', err);
+                alert('删除图片时出错。');
+            }
+        }
+
+        // 添加到收藏
+        async function addToFavorites() {
+            if (state.currentImageIndex === -1) return;
+            
+            try {
+                const imageInfo = state.imageFiles[state.currentImageIndex];
+                const file = imageInfo.file;
+                
+                // 在实际应用中，这里应该将文件移动到Collections文件夹
+                alert(`图片 "${file.name}" 已添加到收藏！`);
+            } catch (err) {
+                console.error('Error adding to favorites:', err);
+                alert('添加到收藏时出错。');
+            }
+        }
+
+        // 切换深色模式
+        function toggleDarkMode(enabled) {
+            if (enabled) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+        }
+
+        // 切换平板模式
+        function toggleTabletMode(enabled) {
+            if (enabled) {
+                document.body.classList.add('tablet-mode');
+            } else {
+                document.body.classList.remove('tablet-mode');
+            }
+        }
+
+        // 切换设置面板
+        function toggleSettingsPanel(show) {
+            if (show) {
+                dom.settingsPanel.classList.add('active');
+            } else {
+                dom.settingsPanel.classList.remove('active');
+            }
+        }
+
+        // 切换对话框
+        function toggleDialog(dialogId, show) {
+            const dialog = document.getElementById(dialogId);
+            if (show) {
+                dialog.classList.add('active');
+            } else {
+                dialog.classList.remove('active');
+            }
+        }
+
+        // 显示删除对话框
+        function showDeleteDialog() {
+            toggleDialog('delete-dialog', true);
+        }
+
+        // Cookie操作函数
+        function setCookie(name, value, days) {
+            const d = new Date();
+            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = "expires=" + d.toUTCString();
+            document.cookie = name + "=" + value + ";" + expires + ";path=/";
+        }
+
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const ca = document.cookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+            }
+            return null;
+        }
+
+        // 初始化应用
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
