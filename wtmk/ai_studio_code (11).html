@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高级图片合成工具 v7.3</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            /* 浅色模式变量 */
+            --primary-color: #5a67d8;
+            --primary-color-dark: #4c51bf;
+            --accent-color: #9f7aea;
+            --light-color: #f8f9fa;
+            --dark-color: #2d3748;
+            --success-color: #48bb78;
+            --warning-color: #ecc94b;
+            --error-color: #f56565;
+            --text-color: #2d3748;
+            --bg-color: #f8f9fa;
+            --card-bg: rgba(255, 255, 255, 0.85);
+            --card-border: rgba(255, 255, 255, 0.25);
+            --input-bg: white;
+            --border-color: #e2e8f0;
+            --shadow-color: rgba(0, 0, 0, 0.08);
+            --instructions-bg: rgba(255, 255, 255, 0.65);
+            --file-item-bg: white;
+            --font-preview-bg: #f8fafc;
+            --directory-info-bg: rgba(72, 187, 120, 0.1);
+            --directory-info-border: #c6f6d5;
+            --directory-info-color: #22543d;
+            --placeholder-color: #718096;
+            --scrollbar-track: rgba(241, 245, 249, 0.8);
+            --scrollbar-thumb: #cbd5e0;
+            --step-bg: rgba(90, 103, 216, 0.05);
+            
+            /* 其他样式设置 */
+            --border-radius: 16px;
+            --shadow: 0 6px 20px var(--shadow-color);
+            --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        
+        .dark-mode {
+            /* 深色模式变量 */
+            --primary-color: #7f9cf5;
+            --primary-color-dark: #667eea;
+            --accent-color: #a3bffa;
+            --light-color: #1a202c;
+            --dark-color: #e2e8f0;
+            --text-color: #e2e8f0;
+            --bg-color: #1a202c;
+            --card-bg: rgba(26, 32, 44, 0.9);
+            --card-border: rgba(26, 32, 44, 0.5);
+            --input-bg: #2d3748;
+            --border-color: #4a5568;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --instructions-bg: rgba(45, 55, 72, 0.6);
+            --file-item-bg: #2d3748;
+            --font-preview-bg: #2d3748;
+            --directory-info-bg: rgba(72, 187, 120, 0.2);
+            --directory-info-border: #22543d;
+            --directory-info-color: #c6f6d5;
+            --placeholder-color: #a0aec0;
+            --scrollbar-track: rgba(26, 32, 44, 0.8);
+            --scrollbar-thumb: #4a5568;
+            --step-bg: rgba(127, 156, 245, 0.1);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'OPPO Sans 4.0', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 30px;
+        }
+
+        body {
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.7;
+            min-height: 100vh;
+            padding: 20px;
+            transition: var(--transition);
+        }
+        
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--scrollbar-track);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border-radius: var(--border-radius);
+            box-shadow: 0 15px 40px var(--shadow-color);
+            border: 1px solid var(--card-border);
+            overflow: hidden;
+            transition: var(--transition);
+        }
+        
+        header {
+            background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+            color: white;
+            text-align: center;
+            padding: 35px 25px;
+            position: relative;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        header h1 {
+            font-size: 2.6rem;
+            margin-bottom: 12px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .main-content {
+            padding: 35px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 35px;
+        }
+        
+        .upload-section .step, .upload-section > p {
+            padding: 0 12px;
+        }
+    
+        .section-title {
+            font-size: 1.35rem;
+            margin-bottom: 0;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            font-weight: 600;
+            position: relative;
+            padding-left: 12px;
+        }
+        
+        .section-title::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 24px;
+            width: 4px;
+            background: var(--primary-color);
+            border-radius: 2px;
+        }
+        
+        .section-title i {
+            margin-right: 12px;
+            font-size: 1.2em;
+        }
+        
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 35px;
+            text-align: center;
+            margin: 20px 0;
+            transition: var(--transition);
+            background: var(--card-bg);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .drop-zone::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(90, 103, 216, 0.05) 0%, rgba(159, 122, 234, 0.05) 100%);
+            opacity: 0;
+            transition: var(--transition);
+            z-index: 0;
+        }
+        
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--primary-color);
+            transform: translateY(-3px);
+            box-shadow: var(--shadow);
+        }
+        
+        .drop-zone:hover::before, .drop-zone.drag-over::before {
+            opacity: 1;
+        }
+        
+        .drop-zone > * {
+            position: relative;
+            z-index: 1;
+        }
+        
+        .drop-zone p {
+            margin: 15px 0;
+            color: var(--text-color);
+            font-size: 1.05rem;
+            opacity: 0.8;
+        }
+        
+        .drop-zone i {
+            font-size: 3.5rem;
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            transition: var(--transition);
+        }
+        
+        .drop-zone:hover i {
+            color: var(--accent-color);
+            transform: scale(1.05);
+        }
+        
+        .file-list {
+            margin-top: 25px;
+            max-height: 250px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 14px 16px;
+            background: var(--file-item-bg);
+            border-radius: 12px;
+            margin-bottom: 12px;
+            box-shadow: 0 3px 8px var(--shadow-color);
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px var(--shadow-color);
+        }
+        
+        .file-item::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 5px;
+            height: 100%;
+            background: var(--primary-color);
+            border-radius: 12px 0 0 12px;
+        }
+        
+        .file-item img {
+            width: 45px;
+            height: 35px;
+            object-fit: cover;
+            margin-right: 15px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .preview-container {
+            position: relative;
+            background: var(--input-bg);
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 450px;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+            border: 1px solid var(--border-color);
+        }
+        
+        #preview {
+            max-width: 100%;
+            max-height: 450px;
+            display: none;
+            border-radius: 8px;
+        }
+        
+        .preview-placeholder {
+            text-align: center;
+            padding: 40px;
+            color: var(--placeholder-color);
+        }
+        
+        .preview-placeholder i {
+            font-size: 4.5rem;
+            margin-bottom: 25px;
+            color: var(--border-color);
+            opacity: 0.7;
+        }
+        
+        button {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            letter-spacing: 0.3px;
+        }
+        
+        button:disabled {
+            background-color: var(--border-color);
+            color: #a0aec0;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none !important;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px var(--shadow-color);
+        }
+
+        button i {
+            margin-right: 10px;
+        }
+        
+        .btn-process {
+            background: var(--primary-color);
+            color: white;
+            flex-grow: 1;
+        }
+        
+        .btn-process:hover:not(:disabled) {
+            background: var(--primary-color-dark);
+        }
+        
+        .btn-reset, .btn-directory {
+            background: var(--input-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-reset:hover:not(:disabled) {
+            background-color: var(--file-item-bg);
+            border-color: var(--border-color);
+        }
+
+        .btn-directory:hover:not(:disabled) {
+            background-color: var(--file-item-bg);
+            border-color: var(--border-color);
+        }
+        
+        .progress-container {
+            margin-top: 25px;
+            display: none;
+        }
+        
+        .progress-bar {
+            height: 12px;
+            background: var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+            width: 0%;
+            transition: width 0.4s ease;
+            border-radius: 6px;
+        }
+        
+        footer {
+            background: var(--dark-color);
+            color: #cbd5e0;
+            text-align: center;
+            padding: 20px;
+            font-size: 0.95rem;
+            transition: var(--transition);
+        }
+
+        .instructions {
+            background: var(--instructions-bg);
+            border-left: 4px solid var(--primary-color);
+            padding: 25px;
+            margin: 25px 0;
+            border-radius: 0 var(--border-radius) var(--border-radius) 0;
+            transition: var(--transition);
+        }
+        
+        .instructions:hover {
+            background: var(--instructions-bg);
+            box-shadow: 0 4px 12px var(--shadow-color);
+        }
+        
+        .instructions h3 { 
+            color: var(--text-color); 
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .instructions h3 i {
+            margin-right: 10px;
+            color: var(--primary-color);
+        }
+        
+        .instructions h4 { 
+            color: var(--primary-color); 
+            margin-top: 20px; 
+            margin-bottom: 8px;
+            font-size: 1.15rem;
+            position: relative;
+            padding-left: 28px;
+        }
+        
+        .instructions h4 i {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.2rem;
+            color: var(--accent-color);
+        }
+        
+        .instructions ul, .instructions ol { 
+            padding-left: 28px; 
+            margin: 15px 0;
+        }
+        
+        .instructions li { 
+            margin-bottom: 12px; 
+            position: relative;
+            padding-left: 8px;
+        }
+        
+        .instructions li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0.6em;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-color);
+        }
+        
+        .instructions p { 
+            margin-bottom: 15px; 
+            color: var(--text-color);
+            line-height: 1.8;
+            opacity: 0.9;
+        }
+        
+        .instructions code { 
+            background-color: var(--input-bg); 
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-family: 'Fira Code', monospace; 
+            color: var(--primary-color);
+            font-size: 0.9em;
+            border: 1px solid var(--border-color);
+        }
+        
+        @media (max-width: 900px) {
+            .main-content { 
+                grid-template-columns: 1fr; 
+                padding: 25px;
+            }
+            .right-top-controls { 
+                margin-top: 25px; 
+                flex-wrap: wrap;
+            }
+            .right-top-controls button {
+                flex: 1;
+                min-width: 120px;
+            }
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px 20px;
+            border-radius: var(--border-radius);
+            background: var(--step-bg);
+            transition: var(--transition);
+        }
+        
+        .step:hover {
+            background: rgba(90, 103, 216, 0.1);
+        }
+        
+        .step-number {
+            background: var(--primary-color);
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 20px;
+            flex-shrink: 0;
+            font-weight: 700;
+            font-size: 1.1rem;
+            box-shadow: 0 3px 8px rgba(90, 103, 216, 0.2);
+        }
+        
+        .settings-card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 25px;
+            margin-top: 15px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 5px 15px var(--shadow-color);
+            transition: var(--transition);
+        }
+        
+        .settings-card:hover {
+            box-shadow: 0 8px 25px var(--shadow-color);
+        }
+        
+        .settings-card h3 {
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+            font-size: 1.2rem;
+            font-weight: 600;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .settings-card h3 i {
+            margin-right: 12px;
+            font-size: 1.3rem;
+        }
+        
+        .setting-row {
+            display: flex;
+            margin-bottom: 20px;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .setting-label {
+            width: 110px;
+            font-weight: 500;
+            flex-shrink: 0;
+            color: var(--text-color);
+            font-size: 1.02rem;
+            opacity: 0.9;
+        }
+        
+        .setting-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: var(--transition);
+            background: var(--input-bg);
+            color: var(--text-color);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }
+        
+        .setting-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(90, 103, 216, 0.15);
+        }
+        
+        .color-input { 
+            width: 45px; 
+            height: 45px; 
+            padding: 3px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 10px; 
+            background: var(--input-bg);
+            cursor: pointer;
+        }
+        
+        .position-input { 
+            width: 100px; 
+            text-align: center;
+        }
+        
+        .font-preview {
+            margin-top: 15px;
+            padding: 20px;
+            background: var(--font-preview-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            font-size: 22px;
+            word-wrap: break-word;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            color: var(--text-color);
+        }
+        
+        .right-top-controls { 
+            display: flex; 
+            justify-content: flex-end; 
+            margin-bottom: 25px; 
+            gap: 15px;
+            flex-wrap: nowrap;
+        }
+        
+        .right-top-controls button { 
+            min-width: 170px;
+            padding: 14px 20px;
+        }
+        
+        .directory-info {
+            background: var(--directory-info-bg);
+            padding: 14px 20px;
+            border-radius: 12px;
+            margin-top: 15px;
+            word-break: break-all;
+            color: var(--directory-info-color);
+            border: 1px solid var(--directory-info-border);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .directory-info i {
+            font-size: 1.3rem;
+        }
+        
+        .bg-selector { 
+            display: flex; 
+            gap: 15px; 
+            margin-top: 15px; 
+            flex-wrap: wrap; 
+            padding: 0 5px;
+        }
+        
+        .bg-thumbnail { 
+            width: 110px; 
+            height: 80px; 
+            border: 2px solid transparent; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            object-fit: cover; 
+            transition: var(--transition); 
+            box-shadow: 0 3px 8px var(--shadow-color);
+        }
+        
+        .bg-thumbnail.selected { 
+            border-color: var(--primary-color); 
+            box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.3);
+            transform: translateY(-3px);
+        }
+        
+        .bg-thumbnail-container { 
+            position: relative; 
+            transition: var(--transition);
+        }
+        
+        .bg-thumbnail-container:hover {
+            transform: translateY(-5px);
+        }
+        
+        .remove-bg { 
+            position: absolute; 
+            top: -8px; 
+            right: -8px; 
+            background: var(--error-color); 
+            color: white; 
+            width: 24px; 
+            height: 24px; 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            font-size: 14px; 
+            line-height: 24px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: var(--transition);
+        }
+        
+        .remove-bg:hover {
+            transform: scale(1.1);
+        }
+        
+        .orientation-indicator { 
+            display: inline-block; 
+            padding: 4px 10px; 
+            border-radius: 20px; 
+            font-size: 0.85rem; 
+            margin-left: 10px; 
+            font-weight: 500;
+            background: var(--input-bg);
+        }
+        
+        .landscape { 
+            color: var(--primary-color); 
+        }
+        
+        .portrait { 
+            color: var(--accent-color); 
+        }
+        
+        .blur-toggle { 
+            display: flex; 
+            align-items: center; 
+            margin-bottom: 20px; 
+            padding: 10px 0;
+        }
+        
+        .blur-toggle input { 
+            margin-right: 12px; 
+            width: 1.3em; 
+            height: 1.3em; 
+        }
+        
+        .blur-controls { 
+            display: none; 
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 10px;
+        }
+        
+        .blur-controls.active { 
+            display: block; 
+            animation: fadeIn 0.4s ease;
+        }
+        
+        .color-picker-container { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+            flex-grow: 1; 
+        }
+        
+        .color-presets { 
+            display: flex; 
+            gap: 8px; 
+            margin-top: 8px; 
+            flex-wrap: wrap; 
+        }
+        
+        .color-preset { 
+            width: 28px; 
+            height: 28px; 
+            border-radius: 50%; 
+            cursor: pointer; 
+            border: 1px solid var(--border-color); 
+            flex-shrink: 0; 
+            transition: var(--transition); 
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+        
+        .color-preset:hover { 
+            transform: scale(1.15); 
+            box-shadow: 0 3px 6px var(--shadow-color);
+        }
+        
+        .alpha-slider { 
+            flex: 1; 
+            height: 8px;
+            border-radius: 4px;
+            background: var(--border-color);
+        }
+        
+        .alpha-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            cursor: pointer;
+            box-shadow: 0 2px 4px var(--shadow-color);
+            border: 2px solid var(--input-bg);
+        }
+        
+        .alpha-label { 
+            width: 55px; 
+            text-align: right; 
+            font-size: 0.95rem; 
+            color: var(--text-color); 
+            font-weight: 500;
+            opacity: 0.8;
+        }
+        
+        .mode-selector { 
+            display: flex; 
+            gap: 15px; 
+            margin-bottom: 20px; 
+            flex-wrap: wrap; 
+        }
+        
+        .mode-option { 
+            display: flex; 
+            align-items: center; 
+            padding: 12px 18px; 
+            border: 1px solid var(--border-color); 
+            border-radius: 12px; 
+            cursor: pointer; 
+            transition: var(--transition); 
+            background: var(--input-bg);
+            flex: 1;
+            min-width: 160px;
+        }
+        
+        .mode-option.active { 
+            border-color: var(--primary-color); 
+            background-color: rgba(90, 103, 216, 0.1); 
+            font-weight: 500; 
+            box-shadow: 0 2px 8px rgba(90, 103, 216, 0.1);
+        }
+        
+        .mode-option input { 
+            margin-right: 10px; 
+        }
+
+        #back-to-top-btn { 
+            display: none; 
+            position: fixed; 
+            bottom: 35px; 
+            right: 35px; 
+            z-index: 99; 
+            border: none; 
+            outline: none; 
+            background: var(--primary-color); 
+            color: white; 
+            cursor: pointer; 
+            width: 56px; 
+            height: 56px; 
+            border-radius: 50%; 
+            font-size: 22px; 
+            opacity: 0.8; 
+            box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+            transition: var(--transition);
+        }
+        
+        #back-to-top-btn:hover { 
+            opacity: 1; 
+            transform: translateY(-5px);
+            background: var(--accent-color);
+        }
+        
+        .theme-toggle {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.3rem;
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
+            z-index: 10;
+        }
+        
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(20deg);
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* 添加一些微妙的动画效果 */
+        .fade-in {
+            animation: fadeIn 0.5s ease forwards;
+        }
+        
+        .upload-section > .step:nth-child(1) { animation-delay: 0.1s; }
+        .upload-section > .step:nth-child(3) { animation-delay: 0.2s; }
+        .upload-section > .step:nth-child(5) { animation-delay: 0.3s; }
+        .upload-section > .step:nth-child(7) { animation-delay: 0.4s; }
+        
+        /* 添加加载完成后的效果 */
+        .processing-complete {
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <button id="back-to-top-btn" title="返回顶部"><i class="fas fa-arrow-up"></i></button>
+    <button class="theme-toggle" id="theme-toggle" title="切换深色/浅色模式">
+        <i class="fas fa-moon"></i>
+    </button>
+
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-magic-wand-sparkles"></i> 高级图片合成工具 v7.3</h1>
+            <p>批量合成图片，添加动态水印与专业模糊效果</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="upload-section">
+                <div class="step fade-in">
+                    <div class="step-number">1</div>
+                    <h2 class="section-title"><i class="fas fa-image"></i> 选择背景图片</h2>
+                </div>
+                <p>选择1-5张背景图 (PNG, 3840×2707)。处理时将循环使用。</p>
+                <div class="drop-zone" id="bg-drop-zone">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <p>点击或拖放背景图片到此处</p>
+                </div>
+                <div class="bg-selector" id="bg-selector"></div>
+                
+                <div class="step fade-in" style="margin-top: 30px;">
+                    <div class="step-number">2</div>
+                    <h2 class="section-title"><i class="fas fa-layer-group"></i> 选择目标图片</h2>
+                </div>
+                 <p>选择多张目标图片 (JPG/JPEG)。</p>
+                <div class="drop-zone" id="target-drop-zone">
+                    <i class="fas fa-copy"></i>
+                    <p>点击或拖放多张目标图片到此处</p>
+                </div>
+                <div class="file-list" id="file-list"></div>
+                
+                <div class="step fade-in" style="margin-top: 30px;">
+                    <div class="step-number">3</div>
+                     <h2 class="section-title"><i class="fas fa-font"></i> 文字水印设置</h2>
+                </div>
+                <div class="settings-card">
+                    <h3><i class="fas fa-text-height"></i> 文字内容</h3>
+                    <div class="setting-row">
+                        <div class="setting-label">自定义文字:</div>
+                        <input type="text" id="custom-text" class="setting-input" value="Danqing Island, Miraland" placeholder="输入自定义文字">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">文字位置:</div>
+                        <select id="text-position" class="setting-input">
+                            <option value="before">在日期前</option>
+                            <option value="after" selected>在日期后</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">日期格式:</div>
+                        <select id="date-format" class="setting-input">
+                            <option value="full">完整日期时间 (YYYY年M月D日 hh:mm)</option>
+                            <option value="date-only">仅日期 (YYYY年M月D日)</option>
+                            <option value="time-only">仅时间 (hh:mm)</option>
+                        </select>
+                    </div>
+                    
+                    <h3 style="margin-top: 25px;"><i class="fas fa-paint-brush"></i> 文字样式</h3>
+                    <div class="setting-row">
+                        <div class="setting-label">字体:</div>
+                        <select id="font-family" class="setting-input">
+                            <option value="Arial, sans-serif">Arial</option>
+                            <option value="'Microsoft YaHei', sans-serif">微软雅黑</option>
+                            <option value="'SimSun', serif">宋体</option>
+                            <option value="'SimHei', sans-serif">黑体</option>
+                            <option value="'KaiTi', serif">楷体</option>
+                            <option value="'FangSong', serif">仿宋</option>
+                            <option value="'OPPO Sans 4.0', sans-serif" selected>OPPO Sans 4.0</option>
+                            <option value="custom">自定义字体...</option>
+                        </select>
+                    </div>
+                    <div class="setting-row" id="custom-font-row" style="display: none;">
+                        <div class="setting-label">字体文件:</div>
+                        <div class="drop-zone" id="font-drop-zone" style="padding: 10px; margin: 0; flex: 1;">
+                            <p>拖放字体文件 (TTF, OTF)</p>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">字重:</div>
+                        <select id="font-weight" class="setting-input">
+                            <option value="100">Thin (100)</option>
+                            <option value="200">ExtraLight (200)</option>
+                            <option value="300" selected>Light (300)</option>
+                            <option value="400">Normal (400)</option>
+                            <option value="500">Medium (500)</option>
+                            <option value="600">SemiBold (600)</option>
+                            <option value="700">Bold (700)</option>
+                            <option value="800">ExtraBold (800)</option>
+                            <option value="900">Black (900)</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">字体大小:</div>
+                        <input type="number" id="font-size" class="setting-input" value="82" min="10" max="200">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">字间距:</div>
+                        <input type="number" id="letter-spacing" class="setting-input" value="4" min="0" max="20">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">颜色:</div>
+                        <div class="color-picker-container">
+                            <input type="color" id="text-color" class="color-input" value="#5a5a5a">
+                            <input type="range" id="text-alpha" class="alpha-slider" min="0" max="100" value="100">
+                            <div class="alpha-label" id="alpha-value">100%</div>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">预设:</div>
+                        <div class="color-presets">
+                            <div class="color-preset" style="background-color: #5a5a5a;" title="默认深灰" data-color="#5a5a5a" data-alpha="100"></div>
+                            <div class="color-preset" style="background-color: #ffffff; border: 1px solid #ccc;" title="白色半透明" data-color="#ffffff" data-alpha="50"></div>
+                            <div class="color-preset" style="background-color: #000000;" title="黑色半透明" data-color="#000000" data-alpha="50"></div>
+                            <div class="color-preset" style="background-color: #ffffff; border: 1px solid #ccc;" title="纯白" data-color="#ffffff" data-alpha="100"></div>
+                            <div class="color-preset" style="background-color: #000000;" title="纯黑" data-color="#000000" data-alpha="100"></div>
+                        </div>
+                    </div>
+                    <h3 style="margin-top: 25px;"><i class="fas fa-map-marker-alt"></i> 文字位置</h3>
+                    <div class="setting-row">
+                        <div class="setting-label">X 坐标:</div>
+                        <input type="number" id="text-x" class="setting-input position-input" value="149" min="0" max="3840">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label">Y 坐标:</div>
+                        <input type="number" id="text-y" class="setting-input position-input" value="2457" min="0" max="2707">
+                    </div>
+                    <div class="font-preview">
+                        <span id="font-preview-text">文字效果预览 {2025年1月22日 19:54}</span>
+                    </div>
+                </div>
+                
+                <div class="step fade-in" style="margin-top: 30px;">
+                    <div class="step-number">4</div>
+                    <h2 class="section-title"><i class="fas fa-blur"></i> 高斯模糊 (可选)</h2>
+                </div>
+                <div class="settings-card">
+                    <div class="blur-toggle">
+                        <input type="checkbox" id="enable-blur">
+                        <label for="enable-blur">启用高斯模糊背景效果</label>
+                    </div>
+                    <div class="blur-controls" id="blur-controls">
+                        <div class="mode-selector">
+                            <div class="mode-option active" data-mode="fill-bottom">
+                                <input type="radio" name="blur-mode" id="blur-fill-bottom" value="fill-bottom" checked>
+                                <label for="blur-fill-bottom">模糊填满底部</label>
+                            </div>
+                            <div class="mode-option" data-mode="glow">
+                                <input type="radio" name="blur-mode" id="blur-glow" value="glow">
+                                <label for="blur-glow">发光模式</label>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">模糊半径:</div>
+                            <input type="range" id="blur-radius" min="0" max="500" value="100" class="alpha-slider">
+                            <div class="alpha-label" id="blur-value">100px</div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-label">遮罩颜色:</div>
+                            <div class="color-picker-container">
+                                <input type="color" id="blur-color" class="color-input" value="#000000">
+                                <input type="range" id="blur-alpha" class="alpha-slider" min="0" max="100" value="50">
+                                <div class="alpha-label" id="blur-alpha-value">50%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step fade-in" style="margin-top: 30px;">
+                    <div class="step-number">5</div>
+                    <h2 class="section-title">选择输出目录并处理</h2>
+                </div>
+            </div>
+            
+            <div>
+                <div class="right-top-controls">
+                    <button id="directory-btn" class="btn-directory"><i class="fas fa-folder-open"></i> 选择输出目录</button>
+                    <button id="process-btn" class="btn-process" disabled><i class="fas fa-cogs"></i> 处理图片</button>
+                    <button id="reset-btn" class="btn-reset"><i class="fas fa-trash-alt"></i> 重置</button>
+                </div>
+                
+                <div class="directory-info" id="directory-info">
+                    <i class="fas fa-check-circle"></i> <span id="directory-path">尚未选择输出目录</span>
+                </div>
+                
+                <h2 class="section-title" style="margin-top: 20px;"><i class="fas fa-eye"></i> 预览效果</h2>
+                <div class="preview-container">
+                    <div class="preview-placeholder" id="preview-placeholder">
+                        <i class="fas fa-image"></i>
+                        <p>图片处理后将在这里显示预览</p>
+                    </div>
+                    <canvas id="preview" width="3840" height="2707"></canvas>
+                </div>
+                
+                <div class="controls" id="download-controls" style="display: none;">
+                    <button id="download-btn" class="btn-download"><i class="fas fa-check-circle"></i> 处理完成</button>
+                </div>
+                
+                <div class="progress-container" id="progress-container">
+                    <div id="progress-text">处理中: 0/0</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+                
+                <div class="instructions">
+                    <h3><i class="fas fa-book-open"></i> 使用指南</h3>
+                    
+                    <h4>核心功能</h4>
+                    <p>本工具是一个纯前端的离线网页，可以将您的【目标图片】（如游戏截图、照片）批量合成到指定的【背景图片】上，并添加自定义的文字水印。所有操作均在您的浏览器中完成，图片数据不会上传至任何服务器，确保您的隐私安全。</p>
+
+                    <h4><i class="fas fa-stream"></i> 操作流程</h4>
+                    <ol>
+                        <li><b>选择背景图片：</b>点击或拖入1-5张<code>3840×2707</code>像素的PNG格式背景图。若处理多张目标图片，背景图将按顺序循环使用。</li>
+                        <li><b>选择目标图片：</b>点击或拖入多张JPG格式的目标图片。工具会自动处理不同尺寸和方向的图片。</li>
+                        <li><b>设置文字水印：</b>
+                            <ul>
+                                <li><b>内容：</b>工具会自动从文件名（格式如 <code>YYYY_MM_DD_...</code>）中提取日期，并与您的自定义文字组合。</li>
+                                <li><b>样式：</b>您可以自由调整字体、字重、大小、颜色、透明度、间距和屏幕位置(X/Y坐标)。支持导入本地<code>.ttf</code>/<code>.otf</code>字体文件。</li>
+                            </ul>
+                        </li>
+                        <li><b>(可选)设置高斯模糊：</b>启用此项可为图片添加更具氛围感的背景效果。
+                             <ul>
+                                <li><b>模糊填满底部：</b>推荐模式。将目标图片进行模糊处理后，填充在主图下方的空白区域，形成自然的延伸感。</li>
+                                <li><b>发光模式：</b>将模糊后的目标图片置于主图正后方，营造出发光效果。</li>
+                            </ul>
+                        </li>
+                        <li><b>选择输出目录：</b>这是<b>必须步骤</b>。点击【选择输出目录】按钮，授权一个文件夹用于保存最终图片。该选择会<b>在当前会话中保持有效</b>，无需重复选择。</li>
+                        <li><b>处理图片：</b>点击【处理图片】按钮开始批量合成。处理完成后，文件将自动保存到您选择的目录中，处理过的图片会从列表中自动移除。</li>
+                    </ol>
+                    
+                    <h4><i class="fas fa-cogs"></i> 自动图片处理逻辑</h4>
+                    <ul>
+                        <li><b>尺寸适配：</b>小于<code>3840×2160</code>的横向图片（如<code>2560×1440</code>）将被自动拉伸至标准尺寸。</li>
+                        <li><b>竖向图片处理：</b>竖向图片（如<code>1440×2560</code>）会被自动向右旋转90°进行合成，完成后再向左旋转90°恢复为竖向（最终尺寸<code>2707×3840</code>），整个过程全自动。</li>
+                    </ul>
+
+                    <h4><i class="fas fa-exclamation-triangle"></i> 注意事项</h4>
+                    <ul>
+                        <li><b>设置已保存：</b>除输出目录外，您所有的设置（文字、模糊等）都会自动保存在浏览器中，下次打开即可继续使用。</li>
+                        <li><b>浏览器兼容性：</b>为获得最佳体验，请使用最新版本的Chrome、Edge或Firefox浏览器。</li>
+                        <li><b>性能：</b>处理大量高分辨率图片会消耗较多内存和CPU资源，请耐心等待。建议单次处理不超过20张图片以避免浏览器卡顿。</li>
+                        <li><b>离线使用：</b>您可以将此HTML文件保存到本地，无需网络连接即可随时使用。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>高级图片合成工具 - 纯前端实现 | 您的图片数据仅在浏览器处理，不会上传到服务器</p>
+            <p>© 2023-2025 图片合成工具 v7.3 | 支持浏览器: Chrome, Firefox, Edge 等现代浏览器</p>
+        </footer>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const elements = {
+                bgDropZone: document.getElementById('bg-drop-zone'),
+                targetDropZone: document.getElementById('target-drop-zone'),
+                fontDropZone: document.getElementById('font-drop-zone'),
+                fileList: document.getElementById('file-list'),
+                bgSelector: document.getElementById('bg-selector'),
+                processBtn: document.getElementById('process-btn'),
+                resetBtn: document.getElementById('reset-btn'),
+                directoryBtn: document.getElementById('directory-btn'),
+                directoryInfo: document.getElementById('directory-info'),
+                directoryPath: document.getElementById('directory-path'),
+                downloadControls: document.getElementById('download-controls'),
+                preview: document.getElementById('preview'),
+                previewPlaceholder: document.getElementById('preview-placeholder'),
+                progressContainer: document.getElementById('progress-container'),
+                progressFill: document.getElementById('progress-fill'),
+                progressText: document.getElementById('progress-text'),
+                fontFamilySelect: document.getElementById('font-family'),
+                customFontRow: document.getElementById('custom-font-row'),
+                fontSizeInput: document.getElementById('font-size'),
+                fontWeightSelect: document.getElementById('font-weight'),
+                letterSpacingInput: document.getElementById('letter-spacing'),
+                textColorInput: document.getElementById('text-color'),
+                textAlphaInput: document.getElementById('text-alpha'),
+                alphaValue: document.getElementById('alpha-value'),
+                textXInput: document.getElementById('text-x'),
+                textYInput: document.getElementById('text-y'),
+                customTextInput: document.getElementById('custom-text'),
+                textPositionSelect: document.getElementById('text-position'),
+                dateFormatSelect: document.getElementById('date-format'),
+                fontPreviewText: document.getElementById('font-preview-text'),
+                enableBlurInput: document.getElementById('enable-blur'),
+                blurControls: document.getElementById('blur-controls'),
+                blurRadiusInput: document.getElementById('blur-radius'),
+                blurValue: document.getElementById('blur-value'),
+                blurColorInput: document.getElementById('blur-color'),
+                blurAlphaInput: document.getElementById('blur-alpha'),
+                blurAlphaValue: document.getElementById('blur-alpha-value'),
+                backToTopBtn: document.getElementById('back-to-top-btn'),
+                themeToggle: document.getElementById('theme-toggle')
+            };
+            
+            // State
+            let backgroundImages = [];
+            let targetImages = [];
+            let customFont = null;
+            let directoryHandle = null;
+            let selectedBgIndex = 0;
+            let blurMode = 'fill-bottom';
+            const SETTINGS_KEY = 'imageSynthSettings_v1';
+            const DARK_MODE_KEY = 'darkModeEnabled';
+
+            // Functions
+            function setupDropZone(zone, type, multiple, accept) {
+                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+                zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+                zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files, type); });
+                zone.addEventListener('click', () => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = multiple;
+                    input.accept = accept;
+                    input.onchange = e => handleFiles(e.target.files, type);
+                    input.click();
+                });
+            }
+            
+            function handleFiles(files, type) {
+                const fileArray = Array.from(files);
+
+                if (type === 'bg') {
+                    fileArray.forEach(file => {
+                        if (file.type === 'image/png' && backgroundImages.length < 5 && !backgroundImages.some(f => f.name === file.name)) {
+                            backgroundImages.push(file);
+                        }
+                    });
+                    updateBackgroundThumbnails();
+                } else if (type === 'target') {
+                    fileArray.forEach(file => {
+                        if (file.type === 'image/jpeg' && !targetImages.some(f => f.name === file.name)) {
+                            targetImages.push(file);
+                            displayTargetFile(file);
+                        }
+                    });
+                } else if (type === 'font') {
+                    if (files[0]) loadCustomFont(files[0]);
+                }
+                updateUIState();
+            }
+            
+            function loadCustomFont(fontFile) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    const fontFace = new FontFace('CustomFont', `url(${e.target.result})`);
+                    document.fonts.add(fontFace);
+                    fontFace.load().then(() => {
+                        customFont = 'CustomFont';
+                        elements.fontFamilySelect.value = 'custom';
+                        updateTextPreview();
+                        alert('自定义字体加载成功！');
+                    }).catch(err => alert('字体加载失败: ' + err.message));
+                };
+                reader.readAsDataURL(fontFile);
+            }
+            
+            function updateBackgroundThumbnails() {
+                elements.bgSelector.innerHTML = '';
+                backgroundImages.forEach((file, index) => displayBackgroundThumbnail(file, index));
+                if (backgroundImages.length > 0) {
+                     selectBackground(Math.min(selectedBgIndex, backgroundImages.length - 1));
+                } else {
+                     elements.preview.style.display = 'none';
+                     elements.previewPlaceholder.style.display = 'flex';
+                }
+            }
+
+            function displayBackgroundThumbnail(file, index) {
+                const container = document.createElement('div');
+                container.className = 'bg-thumbnail-container';
+                const img = document.createElement('img');
+                img.className = 'bg-thumbnail';
+                img.src = URL.createObjectURL(file);
+                if (index === selectedBgIndex) img.classList.add('selected');
+                img.onclick = () => selectBackground(index);
+                const removeBtn = document.createElement('div');
+                removeBtn.className = 'remove-bg';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.onclick = e => { e.stopPropagation(); removeBackground(index); };
+                container.append(img, removeBtn);
+                elements.bgSelector.appendChild(container);
+            }
+            
+            function selectBackground(index) {
+                selectedBgIndex = index;
+                document.querySelectorAll('.bg-thumbnail').forEach((img, i) => img.classList.toggle('selected', i === index));
+            }
+            
+            function removeBackground(index) {
+                URL.revokeObjectURL(backgroundImages[index].src);
+                backgroundImages.splice(index, 1);
+                selectedBgIndex = Math.max(0, selectedBgIndex - (selectedBgIndex >= index ? 1 : 0));
+                updateBackgroundThumbnails();
+                updateUIState();
+            }
+            
+            function displayTargetFile(file) {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.dataset.filename = file.name;
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                const info = document.createElement('div');
+                info.style.cssText = 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = file.name;
+                info.appendChild(nameSpan);
+                const orientation = document.createElement('span');
+                orientation.className = 'orientation-indicator';
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    orientation.textContent = tempImg.width > tempImg.height ? '横向' : '竖向';
+                    orientation.classList.add(tempImg.width > tempImg.height ? 'landscape' : 'portrait');
+                    info.appendChild(orientation);
+                    URL.revokeObjectURL(tempImg.src);
+                };
+                tempImg.src = URL.createObjectURL(file);
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn-reset';
+                deleteBtn.style.cssText = 'padding: 3px 8px; font-size: 0.8rem;';
+                deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+                deleteBtn.onclick = () => {
+                    URL.revokeObjectURL(img.src);
+                    targetImages = targetImages.filter(f => f.name !== file.name);
+                    fileItem.remove();
+                    updateUIState();
+                };
+                fileItem.append(img, info, deleteBtn);
+                elements.fileList.appendChild(fileItem);
+            }
+            
+            function updateUIState() {
+                const ready = backgroundImages.length > 0 && targetImages.length > 0 && directoryHandle;
+                elements.processBtn.disabled = !ready;
+                elements.downloadControls.style.display = 'none';
+            }
+            
+            function updateTextPreview() {
+                const style = {
+                    fontFamily: (elements.fontFamilySelect.value === 'custom' && customFont) ? customFont : elements.fontFamilySelect.value,
+                    fontSize: elements.fontSizeInput.value + 'px',
+                    fontWeight: elements.fontWeightSelect.value,
+                    letterSpacing: elements.letterSpacingInput.value + 'px',
+                    color: hexToRgba(elements.textColorInput.value, parseInt(elements.textAlphaInput.value) / 100)
+                };
+                Object.assign(elements.fontPreviewText.style, style);
+                elements.fontPreviewText.textContent = generateFinalText(elements.customTextInput.value, parseDateTimeFromFilename('2025_01_22_19_54_46_6754709.jpg'));
+            }
+            
+            function parseDateTimeFromFilename(filename) {
+                const match = filename.match(/(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})/);
+                return match ? { year: match[1], month: match[2], day: match[3], hour: match[4], minute: match[5] } : null;
+            }
+            
+            function generateFinalText(customText, dateTime) {
+                if (!dateTime) return customText;
+                let dateStr = '';
+                const { year, month, day, hour, minute } = dateTime;
+                if (elements.dateFormatSelect.value === 'full') dateStr = `${year}年${parseInt(month)}月${parseInt(day)}日 ${hour}:${minute}`;
+                else if (elements.dateFormatSelect.value === 'date-only') dateStr = `${year}年${parseInt(month)}月${parseInt(day)}日`;
+                else if (elements.dateFormatSelect.value === 'time-only') dateStr = `${hour}:${minute}`;
+                return customText ? (elements.textPositionSelect.value === 'before' ? `${customText} ${dateStr}` : `${dateStr} ${customText}`) : dateStr;
+            }
+            
+            async function processImages() {
+                if (elements.processBtn.disabled) return;
+                
+                elements.processBtn.disabled = true;
+                let processedCount = 0;
+                elements.progressContainer.style.display = 'block';
+                elements.progressFill.style.width = '0%';
+                
+                const currentBatch = [...targetImages];
+                targetImages = [];
+
+                for (const file of currentBatch) {
+                    elements.progressText.textContent = `处理中: ${processedCount + 1}/${currentBatch.length}`;
+                    const bgFile = backgroundImages[selectedBgIndex % backgroundImages.length];
+                    
+                    try {
+                        const { canvas, originalTargetImg } = await processSingleImage(file, bgFile);
+                        if (processedCount === currentBatch.length - 1) {
+                           const previewCtx = elements.preview.getContext('2d');
+                           previewCtx.clearRect(0,0, elements.preview.width, elements.preview.height);
+                           previewCtx.drawImage(canvas, 0, 0);
+                           elements.preview.style.display = 'block';
+                           elements.previewPlaceholder.style.display = 'none';
+                        }
+                        await saveImage(canvas, file.name, originalTargetImg);
+                        processedCount++;
+                        elements.progressFill.style.width = `${(processedCount / currentBatch.length) * 100}%`;
+
+                        const fileItemToRemove = elements.fileList.querySelector(`[data-filename="${file.name}"]`);
+                        if(fileItemToRemove) {
+                            fileItemToRemove.style.opacity = '0';
+                            setTimeout(() => fileItemToRemove.remove(), 500);
+                        }
+                    } catch (error) {
+                         console.error(`处理文件 ${file.name} 失败:`, error);
+                         alert(`处理文件 ${file.name} 时出错，已跳过。`);
+                    }
+                    selectedBgIndex++;
+                }
+                
+                elements.progressContainer.style.display = 'none';
+                elements.downloadControls.style.display = 'flex';
+                document.getElementById('download-btn').classList.add('processing-complete');
+                alert(`图片合成完成！已生成 ${processedCount} 张合成图片到指定目录。`);
+                updateUIState();
+            }
+
+            async function processSingleImage(file, bgFile) {
+                const [originalTargetImg, bgImg] = await Promise.all([loadImage(URL.createObjectURL(file)), loadImage(URL.createObjectURL(bgFile))]);
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 3840;
+                canvas.height = 2707;
+                const ctx = canvas.getContext('2d');
+                
+                const processedTargetImg = await getProcessedTargetImage(originalTargetImg);
+
+                if (elements.enableBlurInput.checked) {
+                    if (blurMode === 'fill-bottom') {
+                        const blurCanvas = document.createElement('canvas');
+                        blurCanvas.width = 3840;
+                        blurCanvas.height = 2160;
+                        const blurCtx = blurCanvas.getContext('2d');
+                        blurCtx.drawImage(processedTargetImg, 0, 0);
+                        const blurRadius = parseInt(elements.blurRadiusInput.value);
+                        if (blurRadius > 0) {
+                            blurCtx.filter = `blur(${blurRadius}px)`;
+                            blurCtx.drawImage(blurCanvas, 0, 0);
+                        }
+                        ctx.drawImage(blurCanvas, 0, 597);
+                        ctx.fillStyle = hexToRgba(elements.blurColorInput.value, parseInt(elements.blurAlphaInput.value) / 100);
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(bgImg, 0, 0);
+                        ctx.drawImage(processedTargetImg, 0, 0);
+                    } else if (blurMode === 'glow') {
+                        ctx.drawImage(bgImg, 0, 0); // 1. Draw background
+                        const blurRadius = parseInt(elements.blurRadiusInput.value);
+                        if (blurRadius > 0) {
+                            // Create a temporary canvas for the glow effect to avoid affecting other layers
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = canvas.width;
+                            tempCanvas.height = canvas.height;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            
+                            // Draw the blurred image on the temp canvas
+                            tempCtx.filter = `blur(${blurRadius}px)`;
+                            tempCtx.drawImage(processedTargetImg, 0, 0);
+                            tempCtx.filter = 'none';
+
+                            // Apply the color mask to the blurred image only
+                            tempCtx.globalCompositeOperation = 'source-atop';
+                            tempCtx.fillStyle = hexToRgba(elements.blurColorInput.value, parseInt(elements.blurAlphaInput.value) / 100);
+                            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                            tempCtx.globalCompositeOperation = 'source-over'; // Reset composite mode
+
+                            // Draw the resulting tinted glow onto the main canvas
+                            ctx.drawImage(tempCanvas, 0, 0);
+                        }
+                        // 3. Draw the main target image on top of everything
+                        ctx.drawImage(processedTargetImg, 0, 0);
+                    }
+                } else {
+                    ctx.drawImage(bgImg, 0, 0);
+                    ctx.drawImage(processedTargetImg, 0, 0);
+                }
+                
+                addTextToCanvas(ctx, file.name);
+
+                URL.revokeObjectURL(originalTargetImg.src);
+                URL.revokeObjectURL(bgImg.src);
+
+                return { canvas, originalTargetImg };
+            }
+
+            async function getProcessedTargetImage(targetImg) {
+                const isPortrait = targetImg.height > targetImg.width;
+                let tempImage = targetImg;
+                
+                if (isPortrait) {
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = targetImg.height;
+                    tempCanvas.height = targetImg.width;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
+                    tempCtx.rotate(Math.PI / 2);
+                    tempCtx.drawImage(targetImg, -targetImg.width / 2, -targetImg.height / 2);
+                    tempImage = await loadImage(tempCanvas.toDataURL());
+                }
+
+                if (tempImage.width !== 3840 || tempImage.height !== 2160) {
+                     const stretchCanvas = document.createElement('canvas');
+                     stretchCanvas.width = 3840;
+                     stretchCanvas.height = 2160;
+                     stretchCanvas.getContext('2d').drawImage(tempImage, 0, 0, 3840, 2160);
+                     tempImage = await loadImage(stretchCanvas.toDataURL());
+                }
+
+                return tempImage;
+            }
+
+            function loadImage(src) {
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = (err) => reject(new Error(`Image load error for ${src}: ${err}`));
+                    img.src = src;
+                });
+            }
+            
+            function addTextToCanvas(ctx, filename) {
+                const text = generateFinalText(elements.customTextInput.value, parseDateTimeFromFilename(filename));
+                if (!text) return;
+                
+                const { fontSizeInput, fontWeightSelect, letterSpacingInput, fontFamilySelect, textColorInput, textAlphaInput, textXInput, textYInput } = elements;
+                const fontFamily = (fontFamilySelect.value === 'custom' && customFont) ? customFont : fontFamilySelect.value;
+                ctx.font = `${fontWeightSelect.value} ${fontSizeInput.value}px ${fontFamily}`;
+                ctx.fillStyle = hexToRgba(textColorInput.value, parseInt(textAlphaInput.value) / 100);
+                ctx.textBaseline = 'top';
+                
+                let currentX = parseInt(textXInput.value);
+                for (const char of text) {
+                    ctx.fillText(char, currentX, parseInt(textYInput.value));
+                    currentX += ctx.measureText(char).width + parseInt(letterSpacingInput.value);
+                }
+            }
+            
+            async function saveImage(canvas, filename, originalImg) {
+                const name = filename.replace(/\.jpe?g$/, "") + '-合成.png';
+                let finalCanvas = canvas;
+                
+                if (originalImg.height > originalImg.width) {
+                    const rotatedCanvas = document.createElement('canvas');
+                    rotatedCanvas.width = 2707;
+                    rotatedCanvas.height = 3840;
+                    const rotatedCtx = rotatedCanvas.getContext('2d');
+                    rotatedCtx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+                    rotatedCtx.rotate(-Math.PI / 2);
+                    rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+                    finalCanvas = rotatedCanvas;
+                }
+                
+                const blob = await new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
+                const fileHandle = await directoryHandle.getFileHandle(name, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+            }
+            
+            async function chooseDirectory() {
+                try {
+                    directoryHandle = await window.showDirectoryPicker();
+                    const permission = await directoryHandle.requestPermission({ mode: 'readwrite' });
+                    if (permission === 'granted') {
+                        elements.directoryInfo.style.display = 'flex';
+                        elements.directoryPath.textContent = `输出至: ${directoryHandle.name}`;
+                    } else {
+                        directoryHandle = null;
+                        alert("未授予文件夹写入权限。");
+                    }
+                } catch (error) {
+                    directoryHandle = null;
+                    console.log('用户取消了目录选择');
+                }
+                updateUIState();
+            }
+            
+            function resetState() {
+                backgroundImages.forEach(file => URL.revokeObjectURL(file.src));
+                targetImages.forEach(file => URL.revokeObjectURL(file.src));
+                backgroundImages = [];
+                targetImages = [];
+                customFont = null;
+                selectedBgIndex = 0;
+                
+                elements.fileList.innerHTML = '';
+                elements.bgSelector.innerHTML = '';
+                elements.preview.style.display = 'none';
+                elements.preview.getContext('2d').clearRect(0,0, elements.preview.width, elements.preview.height);
+                elements.previewPlaceholder.style.display = 'flex';
+                elements.downloadControls.style.display = 'none';
+                elements.progressContainer.style.display = 'none';
+                elements.directoryInfo.style.display = 'none';
+                
+                setDefaultValues();
+                updateAllVisuals();
+                updateUIState();
+            }
+            
+            function hexToRgba(hex, alpha) {
+                hex = hex.replace('#', '');
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+
+            function saveSettings() {
+                const settings = {
+                    customText: elements.customTextInput.value,
+                    textPosition: elements.textPositionSelect.value,
+                    dateFormat: elements.dateFormatSelect.value,
+                    fontFamily: elements.fontFamilySelect.value,
+                    fontWeight: elements.fontWeightSelect.value,
+                    fontSize: elements.fontSizeInput.value,
+                    letterSpacing: elements.letterSpacingInput.value,
+                    textColor: elements.textColorInput.value,
+                    textAlpha: elements.textAlphaInput.value,
+                    textX: elements.textXInput.value,
+                    textY: elements.textYInput.value,
+                    enableBlur: elements.enableBlurInput.checked,
+                    blurMode: blurMode,
+                    blurRadius: elements.blurRadiusInput.value,
+                    blurColor: elements.blurColorInput.value,
+                    blurAlpha: elements.blurAlphaInput.value,
+                };
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            }
+
+            function loadSettings() {
+                const savedSettings = localStorage.getItem(SETTINGS_KEY);
+                if (savedSettings) {
+                    const settings = JSON.parse(savedSettings);
+                    Object.keys(settings).forEach(key => {
+                        const element = elements[key + 'Input'] || elements[key + 'Select'] || elements[key];
+                        if(element) {
+                            if (element.type === 'checkbox') element.checked = settings[key];
+                            else element.value = settings[key];
+                        }
+                    });
+                     blurMode = settings.blurMode || 'fill-bottom';
+                } else {
+                    setDefaultValues();
+                }
+                updateAllVisuals();
+            }
+
+            function setDefaultValues() {
+                elements.customTextInput.value = 'Danqing Island, Miraland';
+                elements.textPositionSelect.value = 'after';
+                elements.dateFormatSelect.value = 'full';
+                elements.fontFamilySelect.value = "'OPPO Sans 4.0', sans-serif";
+                elements.fontWeightSelect.value = 300;
+                elements.fontSizeInput.value = 82;
+                elements.letterSpacingInput.value = 4;
+                elements.textColorInput.value = '#5a5a5a';
+                elements.textAlphaInput.value = 100;
+                elements.textXInput.value = 149;
+                elements.textYInput.value = 2457;
+                elements.enableBlurInput.checked = false;
+                blurMode = 'fill-bottom';
+                elements.blurRadiusInput.value = 100;
+                elements.blurColorInput.value = '#000000';
+                elements.blurAlphaInput.value = 50;
+            }
+
+            function updateAllVisuals() {
+                elements.alphaValue.textContent = elements.textAlphaInput.value + '%';
+                elements.blurValue.textContent = elements.blurRadiusInput.value + 'px';
+                elements.blurAlphaValue.textContent = elements.blurAlphaInput.value + '%';
+                elements.blurControls.classList.toggle('active', elements.enableBlurInput.checked);
+                document.querySelectorAll('.mode-option').forEach(opt => opt.classList.toggle('active', opt.dataset.mode === blurMode));
+                const radio = document.querySelector(`input[name="blur-mode"][value="${blurMode}"]`);
+                if(radio) radio.checked = true;
+                updateTextPreview();
+            }
+            
+            function toggleDarkMode() {
+                const isDarkMode = document.body.classList.toggle('dark-mode');
+                localStorage.setItem(DARK_MODE_KEY, isDarkMode);
+                elements.themeToggle.innerHTML = isDarkMode ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+                elements.themeToggle.title = isDarkMode ? '切换到浅色模式' : '切换到深色模式';
+            }
+            
+            function initDarkMode() {
+                const savedDarkMode = localStorage.getItem(DARK_MODE_KEY) === 'true';
+                if (savedDarkMode) {
+                    document.body.classList.add('dark-mode');
+                    elements.themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+                    elements.themeToggle.title = '切换到浅色模式';
+                } else {
+                    elements.themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+                    elements.themeToggle.title = '切换到深色模式';
+                }
+            }
+
+            // Event Listeners
+            setupDropZone(elements.bgDropZone, 'bg', true, 'image/png');
+            setupDropZone(elements.targetDropZone, 'target', true, 'image/jpeg');
+            setupDropZone(elements.fontDropZone, 'font', false, '.ttf,.otf,.woff');
+            
+            window.onscroll = () => { elements.backToTopBtn.style.display = (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) ? "block" : "none"; };
+            elements.backToTopBtn.addEventListener('click', () => { window.scrollTo({top: 0, behavior: 'smooth'}); });
+            
+            elements.fontFamilySelect.addEventListener('change', () => {
+                elements.customFontRow.style.display = elements.fontFamilySelect.value === 'custom' ? 'flex' : 'none';
+            });
+            
+            elements.enableBlurInput.addEventListener('change', () => {
+                if (elements.enableBlurInput.checked) {
+                    blurMode = 'fill-bottom';
+                }
+                updateAllVisuals();
+            });
+            
+            document.querySelectorAll('.mode-option').forEach(option => {
+                option.addEventListener('click', function() { blurMode = this.dataset.mode; updateAllVisuals(); });
+            });
+
+            document.querySelectorAll('.color-preset').forEach(preset => {
+                preset.addEventListener('click', function() {
+                    elements.textColorInput.value = this.dataset.color;
+                    elements.textAlphaInput.value = this.dataset.alpha;
+                    updateAllVisuals();
+                });
+            });
+
+            // === FIX START: Real-time slider updates ===
+            elements.textAlphaInput.addEventListener('input', () => {
+                elements.alphaValue.textContent = elements.textAlphaInput.value + '%';
+                updateTextPreview(); // Also update the preview in real-time
+            });
+            elements.textColorInput.addEventListener('input', updateTextPreview);
+
+            elements.blurRadiusInput.addEventListener('input', () => {
+                elements.blurValue.textContent = elements.blurRadiusInput.value + 'px';
+            });
+
+            elements.blurAlphaInput.addEventListener('input', () => {
+                elements.blurAlphaValue.textContent = elements.blurAlphaInput.value + '%';
+            });
+            // === FIX END ===
+            
+            const settingsPane = document.querySelector('.upload-section');
+            settingsPane.addEventListener('change', saveSettings);
+            settingsPane.addEventListener('input', saveSettings);
+
+            elements.processBtn.addEventListener('click', processImages);
+            elements.resetBtn.addEventListener('click', () => {
+                if(confirm('您确定要重置所有设置和图片吗？此操作不可撤销。')){
+                    localStorage.removeItem(SETTINGS_KEY);
+                    resetState();
+                }
+            });
+            elements.directoryBtn.addEventListener('click', chooseDirectory);
+            elements.themeToggle.addEventListener('click', toggleDarkMode);
+            
+            // Initialization
+            loadSettings();
+            initDarkMode();
+            updateUIState();
+            
+            // Animate in steps
+            setTimeout(() => {
+                document.querySelectorAll('.fade-in').forEach(el => {
+                    el.style.opacity = 0;
+                    el.style.transform = 'translateY(20px)';
+                    setTimeout(() => {
+                        el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                        el.style.opacity = 1;
+                        el.style.transform = 'translateY(0)';
+                    }, 100);
+                });
+            }, 300);
+        });
+    </script>
+</body>
+</html>

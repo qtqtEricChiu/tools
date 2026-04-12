@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高级图片合成工具</title>
+    <style>
+        :root {
+            --primary-color: #4a6fa5;
+            --secondary-color: #6c9bd1;
+            --light-color: #f0f4f8;
+            --dark-color: #2c3e50;
+            --success-color: #4CAF50;
+            --warning-color: #FFC107;
+            --error-color: #f44336;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'OPPO Sans 4.0', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--dark-color);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
+        }
+        
+        header {
+            background: var(--primary-color);
+            color: white;
+            text-align: center;
+            padding: 25px;
+            position: relative;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .main-content {
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+        
+        .upload-section {
+            background: var(--light-color);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        .section-title {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+        }
+        
+        .section-title i {
+            margin-right: 10px;
+        }
+        
+        .drop-zone {
+            border: 2px dashed var(--secondary-color);
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+        }
+        
+        .drop-zone:hover, .drop-zone.drag-over {
+            background: rgba(108, 155, 209, 0.1);
+            border-color: var(--primary-color);
+        }
+        
+        .drop-zone p {
+            margin: 10px 0;
+            color: #666;
+        }
+        
+        .drop-zone i {
+            font-size: 3rem;
+            color: var(--secondary-color);
+            margin-bottom: 15px;
+        }
+        
+        .file-list {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .file-item img {
+            width: 40px;
+            height: 30px;
+            object-fit: cover;
+            margin-right: 10px;
+            border-radius: 3px;
+        }
+        
+        .preview-container {
+            position: relative;
+            background: #eaeef2;
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        
+        #preview {
+            max-width: 100%;
+            max-height: 400px;
+            display: none;
+        }
+        
+        .preview-placeholder {
+            text-align: center;
+            padding: 30px;
+            color: #888;
+        }
+        
+        .preview-placeholder i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            color: var(--secondary-color);
+        }
+        
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        button i {
+            margin-right: 8px;
+        }
+        
+        .btn-process {
+            background: var(--primary-color);
+            color: white;
+            flex-grow: 1;
+        }
+        
+        .btn-process:hover {
+            background: #3c5a8a;
+        }
+        
+        .btn-download {
+            background: var(--success-color);
+            color: white;
+        }
+        
+        .btn-download:hover {
+            background: #3d8b40;
+        }
+        
+        .btn-reset {
+            background: var(--warning-color);
+            color: #333;
+        }
+        
+        .btn-reset:hover {
+            background: #e0a800;
+        }
+        
+        .btn-directory {
+            background: #9c27b0;
+            color: white;
+        }
+        
+        .btn-directory:hover {
+            background: #7b1fa2;
+        }
+        
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .progress-bar {
+            height: 10px;
+            background: #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        footer {
+            background: var(--dark-color);
+            color: white;
+            text-align: center;
+            padding: 15px;
+            font-size: 0.9rem;
+        }
+        
+        .instructions {
+            background: #fffde7;
+            border-left: 4px solid var(--warning-color);
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        .instructions h3 {
+            color: var(--warning-color);
+            margin-bottom: 10px;
+        }
+        
+        .instructions ul {
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 900px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            .right-top-controls {
+                margin-top: 20px;
+            }
+        }
+        
+        .step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            background: rgba(74, 111, 165, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .step-number {
+            background: var(--primary-color);
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        
+        /* 文字设置区域 */
+        .text-settings {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .text-settings h3 {
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            display: flex;
+            align-items: center;
+        }
+        
+        .text-settings h3 i {
+            margin-right: 10px;
+        }
+        
+        .setting-row {
+            display: flex;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        
+        .setting-label {
+            width: 120px;
+            font-weight: 500;
+        }
+        
+        .setting-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        
+        .color-input {
+            width: 60px;
+            height: 40px;
+            padding: 3px;
+        }
+        
+        .position-inputs {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .position-input {
+            width: 80px;
+        }
+        
+        .font-preview {
+            margin-top: 10px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            border: 1px dashed #ccc;
+            font-size: 24px;
+        }
+        
+        .custom-text-preview {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f4f8;
+            border-radius: 5px;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        /* 右侧顶部控制区域 */
+        .right-top-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        
+        .right-top-controls button {
+            min-width: 150px;
+        }
+        
+        .directory-info {
+            background: #e8f5e9;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        /* 背景图片选择器 */
+        .bg-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .bg-thumbnail {
+            width: 100px;
+            height: 70px;
+            border: 2px solid transparent;
+            border-radius: 5px;
+            cursor: pointer;
+            object-fit: cover;
+            transition: all 0.3s ease;
+        }
+        
+        .bg-thumbnail.selected {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 10px rgba(74, 111, 165, 0.5);
+        }
+        
+        .bg-thumbnail-container {
+            position: relative;
+        }
+        
+        .bg-thumbnail-container .remove-bg {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: var(--error-color);
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        /* 图片方向指示器 */
+        .orientation-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+        
+        .landscape {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .portrait {
+            background: #f1f8e9;
+            color: #689f38;
+        }
+        
+        /* 高斯模糊设置 */
+        .blur-settings {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            border: 1px solid #eee;
+        }
+        
+        .blur-toggle {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .blur-toggle input {
+            margin-right: 10px;
+        }
+        
+        .blur-controls {
+            display: none;
+        }
+        
+        .blur-controls.active {
+            display: block;
+        }
+        
+        .blur-preview {
+            margin-top: 15px;
+            padding: 10px;
+            background: #f0f4f8;
+            border-radius: 5px;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        /* 颜色选择器增强 */
+        .color-picker-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .color-presets {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        
+        .color-preset {
+            width: 25px;
+            height: 25px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid #ddd;
+        }
+        
+        .alpha-slider {
+            flex: 1;
+        }
+        
+        .alpha-label {
+            width: 60px;
+            text-align: right;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-images"></i> 高级图片合成工具</h1>
+            <p>将目标图片叠加到背景图片上，添加自定义文字并生成最终合成图片</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="upload-section">
+                <h2 class="section-title"><i class="fas fa-upload"></i> 选择背景图片</h2>
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div>选择1-5张背景图片（3840×2707 PNG格式）</div>
+                </div>
+                <div class="drop-zone" id="bg-drop-zone">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <p>点击或拖放背景图片到此处</p>
+                    <p><small>支持的格式: PNG • 尺寸: 3840×2707 • 最多5张</small></p>
+                </div>
+                
+                <div class="bg-selector" id="bg-selector">
+                    <!-- 背景图片缩略图将在这里显示 -->
+                </div>
+                
+                <h2 class="section-title" style="margin-top: 30px;"><i class="fas fa-layer-group"></i> 选择目标图片</h2>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div>选择多张目标图片（支持横向和竖向图片）</div>
+                </div>
+                <div class="drop-zone" id="target-drop-zone">
+                    <i class="fas fa-copy"></i>
+                    <p>点击或拖放多张目标图片到此处</p>
+                    <p><small>支持的格式: JPG/JPEG • 尺寸: 3840×2160, 2560×1440, 1440×2560, 2160×3840</small></p>
+                </div>
+                
+                <div class="file-list" id="file-list">
+                    <!-- 文件列表会动态生成 -->
+                </div>
+                
+                <h2 class="section-title" style="margin-top: 30px;"><i class="fas fa-font"></i> 文字设置</h2>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div>自定义文字样式和位置</div>
+                </div>
+                
+                <div class="text-settings">
+                    <h3><i class="fas fa-text-height"></i> 文字内容</h3>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">自定义文字:</div>
+                        <input type="text" id="custom-text" class="setting-input" value="Danqing Island, Miraland" placeholder="输入自定义文字">
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">文字位置:</div>
+                        <select id="text-position" class="setting-input">
+                            <option value="before">在日期前</option>
+                            <option value="after" selected>在日期后</option>
+                        </select>
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">日期格式:</div>
+                        <select id="date-format" class="setting-input">
+                            <option value="full">完整日期时间 (YYYY年M月D日 hh:mm)</option>
+                            <option value="date-only">仅日期 (YYYY年M月D日)</option>
+                            <option value="time-only">仅时间 (hh:mm)</option>
+                        </select>
+                    </div>
+                    
+                    <h3><i class="fas fa-paint-brush"></i> 文字样式</h3>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">字体:</div>
+                        <select id="font-family" class="setting-input">
+                            <option value="Arial, sans-serif">Arial</option>
+                            <option value="'Microsoft YaHei', sans-serif">微软雅黑</option>
+                            <option value="'SimSun', serif">宋体</option>
+                            <option value="'SimHei', sans-serif">黑体</option>
+                            <option value="'KaiTi', serif">楷体</option>
+                            <option value="'FangSong', serif">仿宋</option>
+                            <option value="'OPPO Sans 4.0', sans-serif" selected>OPPO Sans 4.0</option>
+                            <option value="custom">自定义字体...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="setting-row" id="custom-font-row" style="display: none;">
+                        <div class="setting-label">自定义字体:</div>
+                        <div class="drop-zone" id="font-drop-zone" style="padding: 10px; margin: 0; flex: 1;">
+                            <i class="fas fa-font"></i>
+                            <p>点击或拖放字体文件到此处</p>
+                            <p><small>支持的格式: TTF, OTF, WOFF</small></p>
+                        </div>
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">字体大小:</div>
+                        <input type="number" id="font-size" class="setting-input" value="82" min="10" max="200">
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">字重:</div>
+                        <select id="font-weight" class="setting-input">
+                            <option value="300">Light (300)</option>
+                            <option value="400" selected>Normal (400)</option>
+                            <option value="500">Medium (500)</option>
+                            <option value="600">SemiBold (600)</option>
+                            <option value="700">Bold (700)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">字间距:</div>
+                        <input type="number" id="letter-spacing" class="setting-input" value="4" min="0" max="20">
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">颜色:</div>
+                        <div class="color-picker-container">
+                            <input type="color" id="text-color" class="color-input" value="#5a5a5a">
+                            <div class="alpha-slider">
+                                <input type="range" id="text-alpha" min="0" max="100" value="100">
+                            </div>
+                            <div class="alpha-label" id="alpha-value">100%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">预设颜色:</div>
+                        <div class="color-presets">
+                            <div class="color-preset" style="background-color: #5a5a5a;" title="默认颜色" data-color="#5a5a5a" data-alpha="100"></div>
+                            <div class="color-preset" style="background-color: #ffffff; border: 1px solid #ccc;" title="白色半透明" data-color="#ffffff" data-alpha="50"></div>
+                            <div class="color-preset" style="background-color: #000000;" title="黑色半透明" data-color="#000000" data-alpha="50"></div>
+                            <div class="color-preset" style="background-color: #ff0000;" title="红色" data-color="#ff0000" data-alpha="100"></div>
+                            <div class="color-preset" style="background-color: #00ff00;" title="绿色" data-color="#00ff00" data-alpha="100"></div>
+                            <div class="color-preset" style="background-color: #0000ff;" title="蓝色" data-color="#0000ff" data-alpha="100"></div>
+                        </div>
+                    </div>
+                    
+                    <h3><i class="fas fa-map-marker-alt"></i> 文字位置</h3>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">X 位置:</div>
+                        <input type="number" id="text-x" class="setting-input position-input" value="149" min="0" max="3840">
+                    </div>
+                    
+                    <div class="setting-row">
+                        <div class="setting-label">Y 位置:</div>
+                        <input type="number" id="text-y" class="setting-input position-input" value="2457" min="0" max="2707">
+                    </div>
+                    
+                    <div class="font-preview">
+                        <div>字体预览: <span id="font-preview-text">文字效果预览 {2025年1月22日 19:54}</span></div>
+                    </div>
+                    
+                    <div class="custom-text-preview">
+                        <div>最终文字效果:</div>
+                        <div id="final-text-preview">2025年1月22日 19:54 Danqing Island, Miraland</div>
+                    </div>
+                </div>
+                
+                <h2 class="section-title" style="margin-top: 30px;"><i class="fas fa-blur"></i> 高斯模糊背景设置</h2>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div>添加高斯模糊背景效果</div>
+                </div>
+                
+                <div class="blur-settings">
+                    <div class="blur-toggle">
+                        <input type="checkbox" id="enable-blur">
+                        <label for="enable-blur">启用高斯模糊背景效果</label>
+                    </div>
+                    
+                    <div class="blur-controls" id="blur-controls">
+                        <div class="setting-row">
+                            <div class="setting-label">模糊半径:</div>
+                            <input type="range" id="blur-radius" min="0" max="500" value="200">
+                            <div class="alpha-label" id="blur-value">200px</div>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-label">遮罩颜色:</div>
+                            <div class="color-picker-container">
+                                <input type="color" id="blur-color" class="color-input" value="#000000">
+                                <div class="alpha-slider">
+                                    <input type="range" id="blur-alpha" min="0" max="100" value="50">
+                                </div>
+                                <div class="alpha-label" id="blur-alpha-value">50%</div>
+                            </div>
+                        </div>
+                        
+                        <div class="blur-preview">
+                            <div>效果预览:</div>
+                            <div style="margin-top: 10px; padding: 10px; background: #e0e0e0; border-radius: 5px;">
+                                <div style="position: relative; height: 100px; overflow: hidden;">
+                                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('https://via.placeholder.com/300') center/cover; filter: blur(20px);"></div>
+                                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5);"></div>
+                                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url('https://via.placeholder.com/300') center/cover;"></div>
+                                    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 50%; background: url('https://via.placeholder.com/300') center/cover;"></div>
+                                </div>
+                                <div style="margin-top: 10px; font-size: 0.9rem;">
+                                    图层结构: 
+                                    <ol>
+                                        <li>高斯模糊背景</li>
+                                        <li>颜色遮罩层</li>
+                                        <li>背景图片</li>
+                                        <li>目标图片</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div>点击处理按钮合成图片</div>
+                </div>
+                <div class="controls">
+                    <button id="process-btn" class="btn-process"><i class="fas fa-cogs"></i> 处理图片</button>
+                    <button id="reset-btn" class="btn-reset"><i class="fas fa-trash-alt"></i> 重置</button>
+                </div>
+                
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div id="progress-text">处理中: 0/0</div>
+                </div>
+            </div>
+            
+            <div>
+                <!-- 右侧顶部控制按钮 -->
+                <div class="right-top-controls">
+                    <button id="directory-btn" class="btn-directory"><i class="fas fa-folder-open"></i> 选择输出目录</button>
+                    <button id="process-btn" class="btn-process"><i class="fas fa-cogs"></i> 处理图片</button>
+                    <button id="reset-btn" class="btn-reset"><i class="fas fa-trash-alt"></i> 重置</button>
+                </div>
+                
+                <div class="directory-info" id="directory-info">
+                    <i class="fas fa-folder"></i> <span id="directory-path">尚未选择输出目录</span>
+                </div>
+                
+                <h2 class="section-title"><i class="fas fa-eye"></i> 预览效果</h2>
+                <div class="preview-container">
+                    <div class="preview-placeholder" id="preview-placeholder">
+                        <i class="fas fa-image"></i>
+                        <p>图片处理后将在这里显示预览</p>
+                    </div>
+                    <canvas id="preview" width="3840" height="2707"></canvas>
+                </div>
+                
+                <div class="controls" id="download-controls" style="display: none;">
+                    <button id="download-btn" class="btn-download"><i class="fas fa-download"></i> 下载所有图片</button>
+                </div>
+                
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div id="progress-text">处理中: 0/0</div>
+                </div>
+                
+                <div class="instructions">
+                    <h3><i class="fas fa-lightbulb"></i> 效果说明</h3>
+                    <p>合成效果为顶层放置目标图片，底层放置背景图片，目标图片上、左、右三边与背景图片贴齐。</p>
+                    
+                    <div style="margin-top: 15px; background: #e3f2fd; padding: 10px; border-radius: 5px;">
+                        <strong>高斯模糊背景效果</strong>
+                        <p>启用高斯模糊背景后，将创建四层结构：</p>
+                        <ol>
+                            <li><strong>高斯模糊层</strong>：目标图片模糊后作为底层背景</li>
+                            <li><strong>颜色遮罩层</strong>：半透明颜色层覆盖在模糊层上</li>
+                            <li><strong>背景图片层</strong>：用户选择的背景图片</li>
+                            <li><strong>目标图片层</strong>：原始目标图片置于顶层</li>
+                        </ol>
+                    </div>
+                    
+                    <div style="margin-top: 15px; background: #f1f8e9; padding: 10px; border-radius: 5px;">
+                        <strong>文字颜色透明度</strong>
+                        <p>新增的文字颜色透明度设置允许创建半透明文字效果，特别适合高斯模糊背景。</p>
+                        <p>预设颜色选项包括白色半透明（rgba(255,255,255,0.5)），适合浅色背景。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>高级图片合成工具 - 纯前端实现 | 您的图片数据仅在浏览器处理，不会上传到服务器</p>
+            <p>© 2023 图片合成工具 | 支持浏览器: Chrome, Firefox, Edge 等现代浏览器</p>
+        </footer>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取DOM元素
+            const bgDropZone = document.getElementById('bg-drop-zone');
+            const targetDropZone = document.getElementById('target-drop-zone');
+            const fontDropZone = document.getElementById('font-drop-zone');
+            const fileList = document.getElementById('file-list');
+            const bgSelector = document.getElementById('bg-selector');
+            const processBtn = document.getElementById('process-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const downloadBtn = document.getElementById('download-btn');
+            const directoryBtn = document.getElementById('directory-btn');
+            const directoryInfo = document.getElementById('directory-info');
+            const directoryPath = document.getElementById('directory-path');
+            const downloadControls = document.getElementById('download-controls');
+            const preview = document.getElementById('preview');
+            const previewPlaceholder = document.getElementById('preview-placeholder');
+            const progressContainer = document.getElementById('progress-container');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const fontFamilySelect = document.getElementById('font-family');
+            const customFontRow = document.getElementById('custom-font-row');
+            const fontSizeInput = document.getElementById('font-size');
+            const fontWeightSelect = document.getElementById('font-weight');
+            const letterSpacingInput = document.getElementById('letter-spacing');
+            const textColorInput = document.getElementById('text-color');
+            const textAlphaInput = document.getElementById('text-alpha');
+            const alphaValue = document.getElementById('alpha-value');
+            const textXInput = document.getElementById('text-x');
+            const textYInput = document.getElementById('text-y');
+            const customTextInput = document.getElementById('custom-text');
+            const textPositionSelect = document.getElementById('text-position');
+            const dateFormatSelect = document.getElementById('date-format');
+            const fontPreviewText = document.getElementById('font-preview-text');
+            const finalTextPreview = document.getElementById('final-text-preview');
+            const enableBlurInput = document.getElementById('enable-blur');
+            const blurControls = document.getElementById('blur-controls');
+            const blurRadiusInput = document.getElementById('blur-radius');
+            const blurValue = document.getElementById('blur-value');
+            const blurColorInput = document.getElementById('blur-color');
+            const blurAlphaInput = document.getElementById('blur-alpha');
+            const blurAlphaValue = document.getElementById('blur-alpha-value');
+            
+            // 存储用户选择的图片和字体
+            let backgroundImages = [];
+            let targetImages = [];
+            let customFont = null;
+            let processedFiles = 0;
+            let directoryHandle = null;
+            let selectedBgIndex = 0;
+            
+            // 设置拖放区域事件
+            function setupDropZone(zone, type) {
+                zone.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    this.classList.add('drag-over');
+                });
+                
+                zone.addEventListener('dragleave', function() {
+                    this.classList.remove('drag-over');
+                });
+                
+                zone.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    this.classList.remove('drag-over');
+                    
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                        handleFiles(files, type);
+                    }
+                });
+                
+                zone.addEventListener('click', function() {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    
+                    if (type === 'bg') {
+                        input.accept = '.png';
+                        input.multiple = true;
+                    } else if (type === 'target') {
+                        input.accept = '.jpg,.jpeg';
+                        input.multiple = true;
+                    } else if (type === 'font') {
+                        input.accept = '.ttf,.otf,.woff';
+                        input.multiple = false;
+                    }
+                    
+                    input.onchange = function(e) {
+                        if (e.target.files.length > 0) {
+                            handleFiles(e.target.files, type);
+                        }
+                    };
+                    
+                    input.click();
+                });
+            }
+            
+            // 处理用户选择的文件
+            function handleFiles(files, type) {
+                if (type === 'bg') {
+                    // 处理背景图片（最多5张）
+                    for (let i = 0; i < Math.min(files.length, 5); i++) {
+                        if (files[i].type.match('image/png')) {
+                            if (backgroundImages.length < 5) {
+                                backgroundImages.push(files[i]);
+                                displayBackgroundThumbnail(files[i], backgroundImages.length - 1);
+                            }
+                        }
+                    }
+                    // 默认选择第一张
+                    if (backgroundImages.length > 0) {
+                        selectBackground(0);
+                    }
+                } else if (type === 'target') {
+                    // 处理多张目标图片
+                    for (let i = 0; i < files.length; i++) {
+                        if (files[i].type.match('image/jpe?g')) {
+                            if (!targetImages.find(img => img.name === files[i].name)) {
+                                targetImages.push(files[i]);
+                                displayTargetFile(files[i]);
+                            }
+                        }
+                    }
+                } else if (type === 'font') {
+                    // 处理字体文件
+                    const fontFile = files[0];
+                    if (fontFile.type.match('font/.*') || /\.(ttf|otf|woff)$/i.test(fontFile.name)) {
+                        loadCustomFont(fontFile);
+                    } else {
+                        alert('请选择TTF、OTF或WOFF格式的字体文件');
+                    }
+                }
+                
+                // 更新UI状态
+                updateUIState();
+                updateTextPreview();
+            }
+            
+            // 加载自定义字体
+            function loadCustomFont(fontFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const fontData = e.target.result;
+                    const fontName = 'CustomFont_' + Date.now();
+                    
+                    // 创建字体-face
+                    const fontFace = new FontFace(fontName, `url(${fontData})`);
+                    
+                    document.fonts.add(fontFace);
+                    
+                    fontFace.load().then(function(loadedFace) {
+                        document.fonts.ready.then(function() {
+                            customFont = fontName;
+                            fontFamilySelect.value = 'custom';
+                            updateTextPreview();
+                            alert('自定义字体加载成功！');
+                        });
+                    }).catch(function(err) {
+                        alert('字体加载失败: ' + err.message);
+                    });
+                };
+                
+                reader.readAsDataURL(fontFile);
+            }
+            
+            // 显示背景图片缩略图
+            function displayBackgroundThumbnail(file, index) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const container = document.createElement('div');
+                    container.className = 'bg-thumbnail-container';
+                    
+                    const img = document.createElement('img');
+                    img.className = 'bg-thumbnail';
+                    img.dataset.index = index;
+                    img.src = e.target.result;
+                    
+                    if (index === selectedBgIndex) {
+                        img.classList.add('selected');
+                    }
+                    
+                    img.onclick = function() {
+                        selectBackground(index);
+                    };
+                    
+                    // 删除按钮
+                    const removeBtn = document.createElement('div');
+                    removeBtn.className = 'remove-bg';
+                    removeBtn.innerHTML = '×';
+                    removeBtn.onclick = function(e) {
+                        e.stopPropagation();
+                        removeBackground(index);
+                    };
+                    
+                    container.appendChild(img);
+                    container.appendChild(removeBtn);
+                    bgSelector.appendChild(container);
+                };
+                reader.readAsDataURL(file);
+            }
+            
+            // 选择背景图片
+            function selectBackground(index) {
+                selectedBgIndex = index;
+                
+                // 更新缩略图选择状态
+                document.querySelectorAll('.bg-thumbnail').forEach((img, i) => {
+                    if (i === index) {
+                        img.classList.add('selected');
+                    } else {
+                        img.classList.remove('selected');
+                    }
+                });
+                
+                // 显示预览
+                displayBackgroundPreview(backgroundImages[index]);
+            }
+            
+            // 移除背景图片
+            function removeBackground(index) {
+                backgroundImages.splice(index, 1);
+                bgSelector.innerHTML = '';
+                
+                // 重新显示缩略图
+                backgroundImages.forEach((file, i) => {
+                    displayBackgroundThumbnail(file, i);
+                });
+                
+                // 更新选择
+                if (backgroundImages.length > 0) {
+                    selectBackground(Math.min(index, backgroundImages.length - 1));
+                } else {
+                    preview.style.display = 'none';
+                    previewPlaceholder.style.display = 'flex';
+                }
+            }
+            
+            // 显示背景图片预览
+            function displayBackgroundPreview(file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        // 校验尺寸
+                        if (img.width === 3840 && img.height === 2707) {
+                            const ctx = preview.getContext('2d');
+                            ctx.drawImage(img, 0, 0, 3840, 2707);
+                            
+                            preview.style.display = 'block';
+                            previewPlaceholder.style.display = 'none';
+                        } else {
+                            alert(`背景图片尺寸为 ${img.width}×${img.height}，应选择3840×2707尺寸的图片`);
+                        }
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+            
+            // 显示目标文件列表
+            function displayTargetFile(file) {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                
+                // 创建文件预览图
+                const img = document.createElement('img');
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+                
+                // 文件信息
+                const info = document.createElement('div');
+                info.style.flex = '1';
+                
+                // 添加方向指示器
+                const orientationSpan = document.createElement('span');
+                orientationSpan.textContent = file.name;
+                info.appendChild(orientationSpan);
+                
+                const orientation = document.createElement('span');
+                orientation.className = 'orientation-indicator';
+                
+                // 检测图片方向
+                const imgObj = new Image();
+                imgObj.src = URL.createObjectURL(file);
+                imgObj.onload = function() {
+                    if (imgObj.width > imgObj.height) {
+                        orientation.textContent = '横向';
+                        orientation.classList.add('landscape');
+                    } else {
+                        orientation.textContent = '竖向';
+                        orientation.classList.add('portrait');
+                    }
+                    info.appendChild(orientation);
+                };
+                
+                // 删除按钮
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn-reset';
+                deleteBtn.style.padding = '3px 8px';
+                deleteBtn.style.fontSize = '0.8rem';
+                deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+                deleteBtn.onclick = function() {
+                    targetImages = targetImages.filter(img => img.name !== file.name);
+                    fileItem.remove();
+                    updateUIState();
+                };
+                
+                fileItem.appendChild(img);
+                fileItem.appendChild(info);
+                fileItem.appendChild(deleteBtn);
+                fileList.appendChild(fileItem);
+            }
+            
+            // 更新UI状态
+            function updateUIState() {
+                // 更新处理按钮状态
+                processBtn.disabled = !(backgroundImages.length > 0 && targetImages.length > 0);
+                
+                // 更新下载区域
+                downloadControls.style.display = 'none';
+            }
+            
+            // 更新文字预览
+            function updateTextPreview() {
+                const fontSize = fontSizeInput.value + 'px';
+                const fontWeight = fontWeightSelect.value;
+                const letterSpacing = letterSpacingInput.value + 'px';
+                const color = textColorInput.value;
+                const alpha = parseInt(textAlphaInput.value) / 100;
+                const rgbaColor = hexToRgba(color, alpha);
+                
+                let fontFamily;
+                if (fontFamilySelect.value === 'custom' && customFont) {
+                    fontFamily = customFont;
+                } else {
+                    fontFamily = fontFamilySelect.value;
+                }
+                
+                // 更新字体预览
+                fontPreviewText.style.fontFamily = fontFamily;
+                fontPreviewText.style.fontSize = fontSize;
+                fontPreviewText.style.fontWeight = fontWeight;
+                fontPreviewText.style.letterSpacing = letterSpacing;
+                fontPreviewText.style.color = rgbaColor;
+                
+                // 更新最终文字预览
+                finalTextPreview.style.fontFamily = fontFamily;
+                finalTextPreview.style.fontSize = fontSize;
+                finalTextPreview.style.fontWeight = fontWeight;
+                finalTextPreview.style.letterSpacing = letterSpacing;
+                finalTextPreview.style.color = rgbaColor;
+                
+                // 生成示例文字
+                const customText = customTextInput.value;
+                const sampleDate = parseDateTimeFromFilename('2025_01_22_19_54_46_6754709.jpg');
+                finalTextPreview.textContent = generateFinalText(customText, sampleDate);
+            }
+            
+            // 从文件名解析日期时间
+            function parseDateTimeFromFilename(filename) {
+                const pattern = /(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})/;
+                const match = filename.match(pattern);
+                
+                if (match) {
+                    return {
+                        year: match[1],
+                        month: match[2],
+                        day: match[3],
+                        hour: match[4],
+                        minute: match[5],
+                        second: match[6]
+                    };
+                }
+                
+                return null;
+            }
+            
+            // 生成最终文字
+            function generateFinalText(customText, dateTime) {
+                if (!dateTime) return customText;
+                
+                const format = dateFormatSelect.value;
+                const position = textPositionSelect.value;
+                let dateStr = '';
+                
+                if (format === 'full') {
+                    dateStr = `${dateTime.year}年${parseInt(dateTime.month)}月${parseInt(dateTime.day)}日 ${dateTime.hour}:${dateTime.minute}`;
+                } else if (format === 'date-only') {
+                    dateStr = `${dateTime.year}年${parseInt(dateTime.month)}月${parseInt(dateTime.day)}日`;
+                } else if (format === 'time-only') {
+                    dateStr = `${dateTime.hour}:${dateTime.minute}`;
+                }
+                
+                return position === 'before' 
+                    ? `${customText} ${dateStr}`
+                    : `${dateStr} ${customText}`;
+            }
+            
+            // 处理图片（合成）
+            function processImages() {
+                if (backgroundImages.length === 0 || targetImages.length === 0) return;
+                
+                processedFiles = 0;
+                progressContainer.style.display = 'block';
+                progressFill.style.width = '0%';
+                progressText.textContent = `处理中: 0/${targetImages.length}`;
+                
+                // 按顺序处理每个文件
+                targetImages.forEach((file, index) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const targetImg = new Image();
+                        targetImg.onload = function() {
+                            // 创建包含背景和目标图片的画布
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 3840;
+                            canvas.height = 2707;
+                            const ctx = canvas.getContext('2d');
+                            
+                            // 获取当前选中的背景图片
+                            const bgImage = backgroundImages[selectedBgIndex];
+                            
+                            // 创建背景
+                            const bgImg = new Image();
+                            bgImg.onload = function() {
+                                // 检查是否启用高斯模糊
+                                if (enableBlurInput.checked) {
+                                    // 创建高斯模糊背景
+                                    createBlurBackground(ctx, targetImg, bgImg);
+                                } else {
+                                    // 绘制背景
+                                    ctx.drawImage(bgImg, 0, 0, 3840, 2707);
+                                    
+                                    // 处理目标图片
+                                    processTargetImage(ctx, targetImg, file.name);
+                                }
+                                
+                                // 添加文字
+                                addTextToCanvas(ctx, file.name);
+                                
+                                // 生成预览（只显示最后一张）
+                                if (index === targetImages.length - 1) {
+                                    preview.style.display = 'block';
+                                    const previewCtx = preview.getContext('2d');
+                                    
+                                    if (enableBlurInput.checked) {
+                                        createBlurBackground(previewCtx, targetImg, bgImg);
+                                    } else {
+                                        previewCtx.drawImage(bgImg, 0, 0, 3840, 2707);
+                                        processTargetImage(previewCtx, targetImg, file.name);
+                                    }
+                                    
+                                    addTextToCanvas(previewCtx, file.name);
+                                }
+                                
+                                // 生成下载
+                                setTimeout(() => {
+                                    saveImage(canvas, file.name, targetImg);
+                                    processedFiles++;
+                                    
+                                    // 更新进度
+                                    const percent = (processedFiles / targetImages.length) * 100;
+                                    progressFill.style.width = `${percent}%`;
+                                    progressText.textContent = `处理中: ${processedFiles}/${targetImages.length}`;
+                                    
+                                    // 全部处理完成
+                                    if (processedFiles === targetImages.length) {
+                                        setTimeout(() => {
+                                            progressContainer.style.display = 'none';
+                                            downloadControls.style.display = 'flex';
+                                            alert(`图片合成完成！已生成${targetImages.length}张合成图片`);
+                                        }, 500);
+                                    }
+                                }, 100);
+                            };
+                            bgImg.src = URL.createObjectURL(bgImage);
+                        };
+                        targetImg.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+            
+            // 创建高斯模糊背景
+            function createBlurBackground(ctx, targetImg, bgImg) {
+                // 1. 创建高斯模糊层
+                const blurCanvas = document.createElement('canvas');
+                blurCanvas.width = 3840;
+                blurCanvas.height = 2707;
+                const blurCtx = blurCanvas.getContext('2d');
+                
+                // 绘制目标图片到模糊层
+                const targetWidth = Math.min(targetImg.width, 3840);
+                const targetHeight = Math.min(targetImg.height, 2160);
+                const x = (3840 - targetWidth) / 2;
+                blurCtx.drawImage(targetImg, x, 0, targetWidth, targetHeight);
+                
+                // 应用高斯模糊
+                const blurRadius = parseInt(blurRadiusInput.value);
+                blurCtx.filter = `blur(${blurRadius}px)`;
+                blurCtx.drawImage(blurCanvas, 0, 0);
+                
+                // 绘制模糊层到主画布
+                ctx.drawImage(blurCanvas, 0, 0);
+                
+                // 2. 添加颜色遮罩层
+                const blurColor = blurColorInput.value;
+                const blurAlpha = parseInt(blurAlphaInput.value) / 100;
+                ctx.fillStyle = hexToRgba(blurColor, blurAlpha);
+                ctx.fillRect(0, 0, 3840, 2707);
+                
+                // 3. 绘制背景图片
+                ctx.drawImage(bgImg, 0, 0, 3840, 2707);
+                
+                // 4. 绘制目标图片
+                processTargetImage(ctx, targetImg);
+            }
+            
+            // 处理目标图片（包括旋转和拉伸）
+            function processTargetImage(ctx, targetImg) {
+                const isPortrait = targetImg.height > targetImg.width;
+                
+                // 处理竖向图片
+                if (isPortrait) {
+                    // 创建临时画布用于旋转
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // 设置画布尺寸为旋转后的尺寸
+                    tempCanvas.width = targetImg.height;
+                    tempCanvas.height = targetImg.width;
+                    
+                    // 旋转图片
+                    tempCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
+                    tempCtx.rotate(Math.PI / 2);
+                    tempCtx.drawImage(targetImg, -targetImg.width / 2, -targetImg.height / 2);
+                    
+                    // 创建旋转后的图片
+                    const rotatedImg = new Image();
+                    rotatedImg.onload = function() {
+                        // 拉伸旋转后的图片到3840×2160
+                        const stretchCanvas = document.createElement('canvas');
+                        stretchCanvas.width = 3840;
+                        stretchCanvas.height = 2160;
+                        const stretchCtx = stretchCanvas.getContext('2d');
+                        stretchCtx.drawImage(rotatedImg, 0, 0, 3840, 2160);
+                        
+                        // 绘制到主画布
+                        const x = (3840 - 3840) / 2;
+                        ctx.drawImage(stretchCanvas, x, 0, 3840, 2160);
+                    };
+                    rotatedImg.src = tempCanvas.toDataURL();
+                } 
+                // 处理横向图片
+                else {
+                    // 处理2560×1440图片
+                    if (targetImg.width === 2560 && targetImg.height === 1440) {
+                        // 拉伸至3840×2160
+                        const stretchCanvas = document.createElement('canvas');
+                        stretchCanvas.width = 3840;
+                        stretchCanvas.height = 2160;
+                        const stretchCtx = stretchCanvas.getContext('2d');
+                        stretchCtx.drawImage(targetImg, 0, 0, 3840, 2160);
+                        
+                        // 绘制到主画布
+                        const x = (3840 - 3840) / 2;
+                        ctx.drawImage(stretchCanvas, x, 0, 3840, 2160);
+                    } 
+                    // 处理3840×2160图片
+                    else {
+                        const width = Math.min(targetImg.width, 3840);
+                        const x = (3840 - width) / 2;
+                        ctx.drawImage(targetImg, x, 0, width, 2160);
+                    }
+                }
+            }
+            
+            // 添加文字到Canvas
+            function addTextToCanvas(ctx, filename) {
+                const dateTime = parseDateTimeFromFilename(filename);
+                const customText = customTextInput.value;
+                const text = generateFinalText(customText, dateTime);
+                
+                if (!text) return;
+                
+                // 设置文字样式
+                const fontSize = parseInt(fontSizeInput.value);
+                const fontWeight = fontWeightSelect.value;
+                const letterSpacing = parseInt(letterSpacingInput.value);
+                const color = textColorInput.value;
+                const alpha = parseInt(textAlphaInput.value) / 100;
+                const rgbaColor = hexToRgba(color, alpha);
+                const x = parseInt(textXInput.value);
+                const y = parseInt(textYInput.value);
+                
+                let fontFamily;
+                if (fontFamilySelect.value === 'custom' && customFont) {
+                    fontFamily = customFont;
+                } else {
+                    fontFamily = fontFamilySelect.value;
+                }
+                
+                ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+                ctx.fillStyle = rgbaColor;
+                ctx.textBaseline = 'top';
+                
+                // 绘制文字（支持字间距）
+                let currentX = x;
+                for (let i = 0; i < text.length; i++) {
+                    ctx.fillText(text[i], currentX, y);
+                    currentX += ctx.measureText(text[i]).width + letterSpacing;
+                }
+            }
+            
+            // 保存图片（支持自定义目录）
+            async function saveImage(canvas, filename, originalImg) {
+                const name = filename.replace(/\.[^/.]+$/, "") + '-watermarked.png';
+                const isPortrait = originalImg.height > originalImg.width;
+                
+                // 处理竖向图片（旋转回原始方向）
+                if (isPortrait) {
+                    const rotatedCanvas = document.createElement('canvas');
+                    rotatedCanvas.width = 2707;
+                    rotatedCanvas.height = 3840;
+                    const rotatedCtx = rotatedCanvas.getContext('2d');
+                    
+                    // 旋转画布
+                    rotatedCtx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+                    rotatedCtx.rotate(-Math.PI / 2);
+                    rotatedCtx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+                    
+                    // 使用旋转后的画布
+                    canvas = rotatedCanvas;
+                }
+                
+                if (directoryHandle) {
+                    try {
+                        // 创建新文件
+                        const fileHandle = await directoryHandle.getFileHandle(name, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        
+                        // 将canvas转换为Blob
+                        canvas.toBlob(async function(blob) {
+                            await writable.write(blob);
+                            await writable.close();
+                        }, 'image/png');
+                    } catch (error) {
+                        console.error('保存文件失败:', error);
+                        // 回退到直接下载
+                        downloadImage(canvas, name);
+                    }
+                } else {
+                    // 如果没有选择目录，直接下载
+                    downloadImage(canvas, name);
+                }
+            }
+            
+            // 直接下载图片
+            function downloadImage(canvas, filename) {
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = canvas.toDataURL('image/png');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            
+            // 选择输出目录
+            async function chooseDirectory() {
+                if ('showDirectoryPicker' in window) {
+                    try {
+                        directoryHandle = await window.showDirectoryPicker();
+                        directoryInfo.style.display = 'block';
+                        directoryPath.textContent = `已选择输出目录: ${directoryHandle.name}`;
+                    } catch (error) {
+                        console.log('用户取消了目录选择');
+                    }
+                } else {
+                    alert('您的浏览器不支持目录选择功能，图片将下载到默认位置');
+                }
+            }
+            
+            // 重置状态
+            function resetState() {
+                backgroundImages = [];
+                targetImages = [];
+                customFont = null;
+                directoryHandle = null;
+                fileList.innerHTML = '';
+                bgSelector.innerHTML = '';
+                preview.style.display = 'none';
+                previewPlaceholder.style.display = 'flex';
+                downloadControls.style.display = 'none';
+                directoryInfo.style.display = 'none';
+                processedFiles = 0;
+                progressContainer.style.display = 'none';
+                
+                // 重置表单
+                customTextInput.value = 'Danqing Island, Miraland';
+                textPositionSelect.value = 'after';
+                dateFormatSelect.value = 'full';
+                fontFamilySelect.value = 'OPPO Sans 4.0, sans-serif';
+                fontSizeInput.value = '82';
+                fontWeightSelect.value = '400';
+                letterSpacingInput.value = '4';
+                textColorInput.value = '#5a5a5a';
+                textAlphaInput.value = '100';
+                alphaValue.textContent = '100%';
+                textXInput.value = '149';
+                textYInput.value = '2457';
+                enableBlurInput.checked = false;
+                blurControls.classList.remove('active');
+                blurRadiusInput.value = '200';
+                blurValue.textContent = '200px';
+                blurColorInput.value = '#000000';
+                blurAlphaInput.value = '50';
+                blurAlphaValue.textContent = '50%';
+                
+                // 更新UI状态
+                updateUIState();
+                updateTextPreview();
+            }
+            
+            // 将十六进制颜色转换为RGBA
+            function hexToRgba(hex, alpha) {
+                // 移除#字符
+                hex = hex.replace('#', '');
+                
+                // 解析RGB值
+                let r, g, b;
+                if (hex.length === 3) {
+                    r = parseInt(hex[0] + hex[0], 16);
+                    g = parseInt(hex[1] + hex[1], 16);
+                    b = parseInt(hex[2] + hex[2], 16);
+                } else if (hex.length === 6) {
+                    r = parseInt(hex.substring(0, 2), 16);
+                    g = parseInt(hex.substring(2, 4), 16);
+                    b = parseInt(hex.substring(4, 6), 16);
+                } else {
+                    return hex; // 返回原始值
+                }
+                
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+            
+            // 初始化拖放区域
+            setupDropZone(bgDropZone, 'bg');
+            setupDropZone(targetDropZone, 'target');
+            setupDropZone(fontDropZone, 'font');
+            
+            // 字体选择事件
+            fontFamilySelect.addEventListener('change', function() {
+                customFontRow.style.display = this.value === 'custom' ? 'flex' : 'none';
+                updateTextPreview();
+            });
+            
+            // 文字样式变化事件
+            fontSizeInput.addEventListener('input', updateTextPreview);
+            fontWeightSelect.addEventListener('change', updateTextPreview);
+            letterSpacingInput.addEventListener('input', updateTextPreview);
+            textColorInput.addEventListener('input', updateTextPreview);
+            textAlphaInput.addEventListener('input', function() {
+                alphaValue.textContent = this.value + '%';
+                updateTextPreview();
+            });
+            customTextInput.addEventListener('input', updateTextPreview);
+            textPositionSelect.addEventListener('change', updateTextPreview);
+            dateFormatSelect.addEventListener('change', updateTextPreview);
+            
+            // 高斯模糊设置事件
+            enableBlurInput.addEventListener('change', function() {
+                blurControls.classList.toggle('active', this.checked);
+            });
+            
+            blurRadiusInput.addEventListener('input', function() {
+                blurValue.textContent = this.value + 'px';
+            });
+            
+            blurAlphaInput.addEventListener('input', function() {
+                blurAlphaValue.textContent = this.value + '%';
+            });
+            
+            // 颜色预设点击事件
+            document.querySelectorAll('.color-preset').forEach(preset => {
+                preset.addEventListener('click', function() {
+                    const color = this.dataset.color;
+                    const alpha = this.dataset.alpha;
+                    textColorInput.value = color;
+                    textAlphaInput.value = alpha;
+                    alphaValue.textContent = alpha + '%';
+                    updateTextPreview();
+                });
+            });
+            
+            // 按钮事件
+            processBtn.addEventListener('click', processImages);
+            resetBtn.addEventListener('click', resetState);
+            directoryBtn.addEventListener('click', chooseDirectory);
+            downloadBtn.addEventListener('click', function() {
+                alert('所有图片已保存完成！');
+            });
+            
+            // 初始UI状态更新
+            updateUIState();
+            updateTextPreview();
+        });
+    </script>
+</body>
+</html>
