@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>周期知识馆 - 周期博物馆</title>
+    <!-- 引入全局样式 -->
+    <link rel="stylesheet" href="global.css">
+    <style>
+        /* 模块特定样式覆盖与补充 */
+        .tab-nav {
+            display: flex;
+            gap: var(--space-sm);
+            overflow-x: auto;
+            padding: var(--space-md) var(--space-md) 0;
+            background: var(--white);
+            position: sticky;
+            top: var(--header-h, 60px);
+            z-index: 10;
+            scrollbar-width: none;
+        }
+        .tab-nav::-webkit-scrollbar { display: none; }
+        
+        .tab-item {
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-full);
+            background: var(--gray-30);
+            color: var(--gray-90);
+            font-size: var(--font-sm);
+            font-weight: var(--weight-medium);
+            white-space: nowrap;
+            transition: all 0.3s var(--ease);
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .tab-item.active {
+            background: var(--pale-blue);
+            color: var(--primary);
+            border-color: var(--primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-md);
+            padding: var(--space-md);
+        }
+        @media (min-width: 768px) {
+            .card-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* 修改自测站卡片样式，适配知识馆 */
+        .knowledge-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+            transition: transform 0.3s var(--ease);
+            cursor: pointer;
+            position: relative;
+        }
+        .knowledge-card:active { transform: scale(0.98); }
+        
+        .kc-media {
+            width: 100%;
+            height: 180px;
+            background: var(--gray-30);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--gray-70);
+            position: relative;
+        }
+        .kc-media video, .kc-media img { width: 100%; height: 100%; object-fit: cover; }
+        .kc-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 2px 8px;
+            border-radius: var(--radius-sm);
+            font-size: var(--font-xs);
+        }
+        .kc-content {
+            padding: var(--space-md);
+        }
+        .kc-title {
+            font-size: var(--font-md);
+            font-weight: var(--weight-bold);
+            margin-bottom: var(--space-xs);
+            color: var(--gray-100);
+        }
+        .kc-desc {
+            font-size: var(--font-sm);
+            color: var(--gray-90);
+            margin-bottom: var(--space-md);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .kc-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .kc-tags { display: flex; gap: var(--space-xs); }
+        .kc-tag {
+            font-size: var(--font-xs);
+            background: var(--gray-30);
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            color: var(--gray-90);
+        }
+
+        /* 详情页与游戏页全屏覆盖 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--white);
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s var(--ease);
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-overlay.open { transform: translateX(0); }
+        
+        .detail-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: var(--space-md);
+            line-height: var(--line-loose);
+        }
+        .detail-body h3 { margin: var(--space-lg) 0 var(--space-sm); color: var(--primary); }
+        .detail-body p { margin-bottom: var(--space-md); color: var(--gray-100); }
+        .tooltip-term {
+            color: var(--primary);
+            border-bottom: 1px dashed var(--primary);
+            cursor: pointer;
+        }
+
+        /* 游戏浮窗 - 拜耳品牌渐变 */
+        .game-fab {
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            width: 60px; height: 60px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 16px rgba(0, 102, 177, 0.35);
+            cursor: pointer;
+            z-index: 50;
+            font-size: 24px;
+            transition: all var(--duration-base) var(--ease);
+        }
+        .game-fab:hover { transform: scale(1.1); box-shadow: 0 6px 24px rgba(0, 102, 177, 0.5); }
+
+        .game-container {
+            padding: var(--space-lg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .game-option {
+            width: 100%;
+            padding: var(--space-md);
+            margin-bottom: var(--space-md);
+            background: var(--gray-10);
+            border: 2px solid var(--gray-50);
+            border-radius: var(--radius-lg);
+            font-weight: var(--weight-bold);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .game-option:active { transform: scale(0.98); }
+        .game-option.correct { border-color: var(--success); background: rgba(76,175,80,0.1); color: var(--success); }
+        .game-option.wrong { border-color: var(--error); background: rgba(255,107,107,0.1); color: var(--error); }
+
+    </style>
+</head>
+<body class="bg-gray-30 page-enter">
+
+    <!-- 顶部导航栏 -->
+    <header class="navbar bg-white">
+        <a href="index.html" class="back-home-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回大厅
+        </a>
+        <h1 class="text-lg weight-medium">周期知识馆</h1>
+        <button class="btn btn--ghost btn--sm" onclick="openSearch()">🔍</button>
+    </header>
+
+    <!-- 分类Tab导航 -->
+    <nav class="tab-nav" id="tabNav">
+        <div class="tab-item active" data-cat="all">全部</div>
+        <div class="tab-item" data-cat="physiology">🧬 生理常识</div>
+        <div class="tab-item" data-cat="myth">🚫 误区澄清</div>
+        <div class="tab-item" data-cat="diet">🥦 饮食运动</div>
+        <div class="tab-item" data-cat="psychology">💖 心理调节</div>
+    </nav>
+
+    <!-- 主内容区域 -->
+    <main class="card-grid" id="cardContainer">
+        <!-- 动态渲染 -->
+    </main>
+
+    <!-- 游戏入口悬浮按钮 -->
+    <div class="game-fab ip-float" onclick="openGame()">🏆</div>
+
+    <!-- ================= 详情页 Modal ================= -->
+    <div class="modal-overlay" id="detailModal">
+        <header class="navbar bg-white">
+            <a class="back-home-btn" onclick="closeDetail()" style="cursor:pointer;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                返回
+            </a>
+            <h1 class="text-lg weight-medium" id="detailTitle">文章标题</h1>
+            <button class="btn btn--ghost btn--sm" id="favBtn" onclick="toggleFav()">🤍</button>
+        </header>
+        <div class="detail-body" id="detailBody">
+            <!-- 详情内容 -->
+        </div>
+    </div>
+
+    <!-- ================= 知识闯关 Modal ================= -->
+    <div class="modal-overlay" id="gameModal">
+        <header class="navbar bg-white">
+            <a class="back-home-btn" onclick="closeGame()" style="cursor:pointer;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                返回
+            </a>
+            <h1 class="text-lg weight-medium">知识闯关</h1>
+            <div></div>
+        </header>
+        <div class="game-container" id="gameContainer">
+            <!-- 游戏内容 -->
+        </div>
+    </div>
+
+<script>
+    // ================= 数据模拟 (JSON) =================
+    const knowledgeData = [
+        {
+            id: "art_001",
+            title: "痛经真的因为吃冰吗？",
+            category: "myth",
+            tags: ["痛经", "辟谣"],
+            summary: "关于经期的最大迷思，今天为你解开。喝冰水真的会导致痛经吗？",
+            readTime: 3,
+            mediaType: "video",
+            mediaUrl: "https://placehold.co/600x400/7AC142/FFFFFF?text=Video+Placeholder",
+            content: `<p>很多女生从小被教育“经期不能吃冰”，但这其实是一个复杂的迷思。</p>
+                      <h3>科学真相</h3>
+                      <p>痛经主要分为<span class="tooltip-term" onclick="showTip('原发性痛经')">原发性</span>和<span class="tooltip-term" onclick="showTip('继发性痛经')">继发性</span>两种。吃冰本身并不直接导致痛经，但冰冷食物可能刺激血管收缩，加重部分人的不适感。</p>
+                      <p>🧬 暖暖说：如果你的身体习惯了冰水，不必强求，听从身体的感受最重要！</p>`,
+            quiz: { question: "喝红糖水能治愈痛经吗？", options: ["能，因为补充能量", "不能，主要起安慰剂作用"], correctIndex: 1 }
+        },
+        {
+            id: "art_002",
+            title: "28天身体漫游指南",
+            category: "physiology",
+            tags: ["周期", "科普"],
+            summary: "了解你的28天周期，掌握身体的节律魔法。",
+            readTime: 5,
+            mediaType: "image",
+            mediaUrl: "https://placehold.co/600x400/0066B1/FFFFFF?text=Cycle+Map",
+            content: `<p>女性的生理周期不仅仅是月经期那几天，它是一个完整的28天（平均）旅程。</p>
+                      <h3>卵泡期：新生的开始</h3>
+                      <p>月经结束后，雌激素上升，这是你精力最充沛、皮肤最好的时候。</p>
+                      <h3>黄体期：内省的时刻</h3>
+                      <p>孕酮升高，身体可能会感到水肿或疲惫，这是身体在提醒你放慢脚步。</p>`,
+            quiz: { question: "女性平均的生理周期是多少天？", options: ["7天", "28天"], correctIndex: 1 }
+        },
+        {
+            id: "art_003",
+            title: "经期舒缓瑜伽",
+            category: "diet",
+            tags: ["运动", "缓解"],
+            summary: "不需要剧烈运动，这几个姿势帮你缓解不适。",
+            readTime: 2,
+            mediaType: "video",
+            mediaUrl: "https://placehold.co/600x400/FF9800/FFFFFF?text=Video+Placeholder",
+            content: `<p>经期适当运动可以促进血液循环，缓解痛经。推荐尝试以下动作：</p>
+                      <h3>婴儿式</h3>
+                      <p>跪姿，身体前倾贴地，双手前伸，深呼吸5次。</p>
+                      <h3>猫牛式</h3>
+                      <p>四足跪姿，配合呼吸交替拱背和塌腰。</p>`,
+            quiz: { question: "经期完全不能运动，对吗？", options: ["对，必须静养", "错，可以做舒缓运动"], correctIndex: 1 }
+        },
+        {
+            id: "art_004",
+            title: "拥抱经前综合症(PMS)",
+            category: "psychology",
+            tags: ["心理", "情绪"],
+            summary: "突然的emo不是你的错，是激素在捣蛋。",
+            readTime: 4,
+            mediaType: "image",
+            mediaUrl: "https://placehold.co/600x400/9C27B0/FFFFFF?text=PMS+Care",
+            content: `<p>经前综合症（PMS）常常让人情绪失控，想哭、易怒、焦虑……</p>
+                      <h3>接纳情绪</h3>
+                      <p>告诉自己，这是身体激素变化的自然反应，不需要为此感到羞耻或自责。</p>
+                      <h3>寻求支持</h3>
+                      <p>在“共鸣墙”写下感受，你会发现很多人和你一样。</p>`,
+            quiz: { question: "经前情绪波动主要因为什么？", options: ["性格不好", "激素水平变化"], correctIndex: 1 }
+        }
+    ];
+
+    // ================= 状态管理 =================
+    let currentFilter = 'all';
+    let currentArticle = null;
+    let favorites = JSON.parse(localStorage.getItem('kb_favorites') || '[]');
+    let badges = JSON.parse(localStorage.getItem('kb_badges') || '[]');
+
+    // ================= 渲染逻辑 =================
+    function renderCards() {
+        const container = document.getElementById('cardContainer');
+        container.innerHTML = '';
+        
+        const filtered = currentFilter === 'all' 
+            ? knowledgeData 
+            : knowledgeData.filter(a => a.category === currentFilter);
+
+        if (filtered.length === 0) {
+            container.innerHTML = `<div class="text-center p-8 text-secondary">
+                <div class="empty-stateicon">📭</div>
+                <p>暂无此类内容</p>
+            </div>`;
+            return;
+        }
+
+        filtered.forEach(article => {
+            const isFav = favorites.includes(article.id);
+            const mediaHtml = article.mediaType === 'video' 
+                ? `<video src="${article.mediaUrl}" poster="${article.mediaUrl}" controlsList="nodownload"></video>`
+                : `<img src="${article.mediaUrl}" alt="${article.title}">`;
+            
+            const card = document.createElement('div');
+            card.className = 'knowledge-card';
+            card.onclick = () => openDetail(article.id);
+            card.innerHTML = `
+                <div class="kc-media">
+                    ${mediaHtml}
+                    <div class="kc-badge">${article.readTime} min</div>
+                </div>
+                <div class="kc-content">
+                    <div class="kc-title">${article.title}</div>
+                    <div class="kc-desc">${article.summary}</div>
+                    <div class="kc-footer">
+                        <div class="kc-tags">
+                            ${article.tags.map(t => `<span class="kc-tag">#${t}</span>`).join('')}
+                        </div>
+                        <div class="text-xs text-secondary">❤️ ${isFav ? '已收藏' : '收藏'}</div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    // ================= 交互逻辑 =================
+    
+    // Tab 切换
+    document.getElementById('tabNav').addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-item')) {
+            document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+            e.target.classList.add('active');
+            currentFilter = e.target.dataset.cat;
+            renderCards();
+        }
+    });
+
+    // 打开详情
+    function openDetail(id) {
+        currentArticle = knowledgeData.find(a => a.id === id);
+        if (!currentArticle) return;
+
+        document.getElementById('detailTitle').innerText = currentArticle.title;
+        document.getElementById('detailBody').innerHTML = `
+            <div class="rounded-lg overflow-hidden mb-4">
+                ${currentArticle.mediaType === 'video' 
+                    ? `<video src="${currentArticle.mediaUrl}" controls style="width:100%;"></video>` 
+                    : `<img src="${currentArticle.mediaUrl}" style="width:100%; border-radius:8px;" alt="">`}
+            </div>
+            ${currentArticle.content}
+            <div class="mt-4 p-4 bg-gray-10 rounded-lg flex items-center gap-3">
+                <div class="text-2xl ip-float">🟡</div>
+                <div class="text-sm text-secondary">如果你还有疑惑，可以去<span class="text-primary weight-medium cursor-pointer" onclick="openGame()">知识闯关</span>测一测！</div>
+            </div>
+        `;
+        
+        updateFavBtn();
+        document.getElementById('detailModal').classList.add('open');
+    }
+
+    function closeDetail() {
+        document.getElementById('detailModal').classList.remove('open');
+    }
+
+    // 收藏功能
+    function toggleFav() {
+        if (!currentArticle) return;
+        const idx = favorites.indexOf(currentArticle.id);
+        if (idx === -1) {
+            favorites.push(currentArticle.id);
+        } else {
+            favorites.splice(idx, 1);
+        }
+        localStorage.setItem('kb_favorites', JSON.stringify(favorites));
+        updateFavBtn();
+        renderCards(); // 刷新列表红心状态
+    }
+
+    function updateFavBtn() {
+        const btn = document.getElementById('favBtn');
+        const isFav = favorites.includes(currentArticle.id);
+        btn.innerHTML = isFav ? '❤️' : '🤍';
+    }
+
+    // 术语提示
+    function showTip(term) {
+        const tips = {
+            '原发性痛经': '指生殖器官无器质性病变的痛经，多见于年轻女性。',
+            '继发性痛经': '指由盆腔器质性疾病引起的痛经，如子宫内膜异位症。'
+        };
+        alert(`💡 科普小贴士：\n${term}\n${tips[term] || '暂无解释'}`);
+    }
+
+    // ================= 知识闯关游戏 =================
+    function openGame() {
+        // 随机选一篇有题目的文章
+        const withQuiz = knowledgeData.filter(a => a.quiz && !badges.includes(a.id));
+        const target = withQuiz.length > 0 ? withQuiz[Math.floor(Math.random() * withQuiz.length)] : null;
+        
+        const container = document.getElementById('gameContainer');
+        
+        if (!target) {
+            container.innerHTML = `
+                <div class="text-center p-8">
+                    <div class="text-4xl ip-pulse mb-4">🎉</div>
+                    <h2 class="text-lg weight-bold mb-2">恭喜你！</h2>
+                    <p class="text-secondary">你已经收集了所有知识勋章！</p>
+                    <button class="btn btn--primary mt-4" onclick="closeGame()">返回知识馆</button>
+                </div>
+            `;
+        } else {
+            const q = target.quiz;
+            container.innerHTML = `
+                <div class="text-center mb-6">
+                    <div class="text-4xl ip-float mb-4">🏆</div>
+                    <h2 class="text-md weight-medium text-secondary">来自《${target.title}》的挑战</h2>
+                </div>
+                <div class="question-card w-100 p-6">
+                    <h2 class="text-lg weight-bold mb-6 text-center">${q.question}</h2>
+                    <div class="flex flex-col gap-4">
+                        ${q.options.map((opt, i) => `
+                            <div class="game-option" data-idx="${i}" onclick="checkAnswer('${target.id}', ${i}, ${q.correctIndex})">
+                                ${opt}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        document.getElementById('gameModal').classList.add('open');
+    }
+
+    function checkAnswer(artId, selected, correct) {
+        const options = document.querySelectorAll('.game-option');
+        options.forEach(el => {
+            const idx = parseInt(el.dataset.idx);
+            el.style.pointerEvents = 'none';
+            if (idx === correct) el.classList.add('correct');
+            if (idx === selected && selected !== correct) el.classList.add('wrong');
+        });
+
+        if (selected === correct) {
+            badges.push(artId);
+            localStorage.setItem('kb_badges', JSON.stringify(badges));
+            setTimeout(() => {
+                alert('✅ 回答正确！获得“知识勋章”一枚！');
+                openGame(); // 自动下一题
+            }, 1000);
+        } else {
+            setTimeout(() => {
+                alert('❌ 回答错误，正确答案已标绿。再接再厉！');
+                openGame();
+            }, 1000);
+        }
+    }
+
+    function closeGame() {
+        document.getElementById('gameModal').classList.remove('open');
+    }
+
+    // 初始化
+    renderCards();
+
+    // 主题初始化（从 localStorage 读取）
+    (function() {
+        var t = localStorage.getItem('theme');
+        if (t) document.documentElement.setAttribute('data-theme', t);
+    })();
+
+</script>
+
+<!-- 底部导航栏 -->
+<nav class="tab-bar">
+    <a href="index.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+        <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+        <span class="tab-label text-xs">首页</span>
+    </a>
+    <a href="dairy.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+        <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+        </svg>
+        <span class="tab-label text-xs">日记</span>
+    </a>
+    <a href="test.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+        <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <span class="tab-label text-xs">自测</span>
+    </a>
+    <a href="know.html" class="tab-item active flex-1 flex flex-col items-center gap-1 p-2">
+        <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+        </svg>
+        <span class="tab-label text-xs">知识</span>
+    </a>
+    <a href="profile.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+        <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        <span class="tab-label text-xs">我的</span>
+    </a>
+</nav>
+
+</body>
+</html>

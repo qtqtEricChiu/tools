@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>周期状态自测站 - 周期博物馆</title>
+    <!-- 引入全局样式 -->
+    <link rel="stylesheet" href="global.css">
+    <!-- 引入Chart.js用于绘制雷达图 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* 针对本模块的特定样式补充 */
+        .quiz-container {
+            min-height: calc(100vh - var(--header-h) - var(--footer-h));
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: var(--space-xl) var(--space-md);
+        }
+
+        /* 进度条 */
+        .progress-wrapper {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: var(--space-xl);
+            background: var(--gray-30);
+            border-radius: var(--radius-full);
+            height: 8px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: var(--radius-full);
+            transition: width 0.5s var(--ease-spring);
+            box-shadow: 0 0 8px rgba(0, 102, 177, 0.3);
+        }
+
+        /* 问题卡片动画 */
+        .question-card {
+            background: var(--white);
+            padding: var(--space-xxl) var(--space-lg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            animation: scaleIn 0.4s var(--ease-spring);
+        }
+        .question-title {
+            font-size: var(--font-lg);
+            font-weight: var(--weight-bold);
+            color: var(--gray-100);
+            margin-bottom: var(--space-xl);
+        }
+
+        /* 视觉滑块选项 (痛感) */
+        .slider-options {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: var(--space-md);
+        }
+        .slider-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-xs);
+            cursor: pointer;
+            transition: transform 0.2s var(--ease);
+        }
+        .slider-item:hover { transform: translateY(-4px); }
+        .slider-icon {
+            width: 50px; height: 50px;
+            background: var(--gray-30);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem;
+            transition: all 0.3s var(--ease);
+        }
+        .slider-item.selected .slider-icon {
+            background: var(--soft-pink);
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+        }
+        .slider-label { font-size: var(--font-xs); color: var(--gray-90); }
+
+        /* 表情矩阵 (情绪) */
+        .emotion-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: var(--space-md);
+        }
+        .emotion-item {
+            padding: var(--space-md);
+            border: 2px solid var(--gray-30);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s var(--ease);
+        }
+        .emotion-item:hover { border-color: var(--primary-light); }
+        .emotion-item.selected {
+            border-color: var(--primary);
+            background: var(--pale-blue);
+        }
+        .emotion-icon { font-size: 2rem; margin-bottom: var(--space-xs); }
+        .emotion-desc { font-size: var(--font-xs); color: var(--gray-90); }
+
+        /* 是/否卡片 (习惯) */
+        .choice-cards {
+            display: flex;
+            gap: var(--space-lg);
+            width: 100%;
+        }
+        .choice-card {
+            flex: 1;
+            padding: var(--space-xl) var(--space-md);
+            background: var(--gray-10);
+            border: 2px solid transparent;
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            transition: all 0.3s var(--ease);
+        }
+        .choice-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+        .choice-card.selected {
+            border-color: var(--secondary);
+            background: var(--white);
+            box-shadow: var(--shadow-lg);
+        }
+        .choice-icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+        .choice-text { font-weight: var(--weight-bold); color: var(--gray-100); }
+
+        /* 报告页样式 */
+        .report-container {
+            display: none; /* 初始隐藏 */
+            flex-direction: column;
+            align-items: center;
+            padding: var(--space-xl) var(--space-md);
+            animation: fadeIn 0.8s var(--ease);
+        }
+        .report-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+        .report-title-main {
+            font-size: var(--font-xxl);
+            color: var(--primary);
+            margin-bottom: var(--space-sm);
+        }
+        .report-subtitle {
+            font-size: var(--font-md);
+            color: var(--gray-90);
+            background: var(--pale-blue);
+            padding: var(--space-xs) var(--space-md);
+            border-radius: var(--radius-full);
+            display: inline-block;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto var(--space-xl);
+        }
+        .report-section {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg);
+            margin-bottom: var(--space-md);
+            box-shadow: var(--shadow-sm);
+            width: 100%;
+            max-width: 500px;
+        }
+        .section-title {
+            font-size: var(--font-md);
+            color: var(--primary);
+            border-left: 4px solid var(--secondary);
+            padding-left: var(--space-sm);
+            margin-bottom: var(--space-md);
+        }
+        .section-title::after {
+            content: '';
+            display: block;
+            width: 40px;
+            height: 2px;
+            background: var(--secondary);
+            margin-top: var(--space-xs);
+        }
+        .report-actions {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+            width: 100%;
+            max-width: 500px;
+            margin-top: var(--space-lg);
+        }
+        
+        /* 动画定义补充 */
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="navbar">
+        <a href="index.html" class="back-home-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回大厅
+        </a>
+        <h1 style="font-size: var(--font-md); font-weight: var(--weight-bold); color: var(--primary);">周期状态自测站</h1>
+        <div style="width: 60px;"></div> <!-- 占位平衡布局 -->
+    </header>
+
+    <!-- 问卷主体 -->
+    <main class="main-content page-enter">
+        <div id="quizView" class="quiz-container">
+            <!-- 进度条 -->
+            <div class="progress-wrapper">
+                <div id="progressBar" class="progress-bar" style="width: 0%;"></div>
+            </div>
+            <!-- 问题动态渲染区 -->
+            <div id="questionContainer"></div>
+        </div>
+
+        <!-- 报告主体 -->
+        <div id="reportView" class="report-container">
+            <div class="report-header">
+                <div style="font-size: 3rem; margin-bottom: var(--space-sm);">🧚‍♀️</div>
+                <h2 class="report-title-main">您的周期状况是</h2>
+                <div id="reportType" class="report-subtitle">温和的潮汐</div>
+            </div>
+
+            <div class="report-section">
+                <h3 class="section-title">维度解析</h3>
+                <div class="chart-container">
+                    <canvas id="radarChart"></canvas>
+                </div>
+            </div>
+
+            <div class="report-section">
+                <h3 class="section-title">科学解读</h3>
+                <p id="reportExplanation" class="text-sm text-secondary" style="line-height: 1.6;"></p>
+            </div>
+
+            <div class="report-section">
+                <h3 class="section-title">个性化指南</h3>
+                <ul id="reportAdvice" class="text-sm text-secondary" style="padding-left: 20px; line-height: 1.8;"></ul>
+            </div>
+
+            <div class="report-actions">
+                <button class="btn btn--primary btn--lg btn--block" onclick="location.href='dairy.html'">开启周期日记</button>
+                <button class="btn btn--secondary btn--lg btn--block" onclick="handleShare()">分享报告至社交圈</button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 主题初始化
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t) document.documentElement.setAttribute('data-theme', t);
+        })();
+
+        // ================= 数据结构设计 =================
+        // 问卷及逻辑配置文件 (JSON 结构)
+        const quizConfig = {
+            questions: [
+                {
+                    id: "pain",
+                    title: "最近一次周期，你的不适感像什么？",
+                    type: "slider", // 滑块视觉选择
+                    options: [
+                        { id: "p1", icon: "💧", label: "平静水面", scores: { comfort: 5, emotion: 5 } },
+                        { id: "p2", icon: "🌊", label: "微波荡漾", scores: { comfort: 4, emotion: 4 } },
+                        { id: "p3", icon: "🌧️", label: "阵雨来袭", scores: { comfort: 3, emotion: 3 } },
+                        { id: "p4", icon: "🌪️", label: "狂风暴雨", scores: { comfort: 2, emotion: 2 } },
+                        { id: "p5", icon: "🌋", label: "海啸级冲击", scores: { comfort: 1, emotion: 1 } }
+                    ]
+                },
+                {
+                    id: "emotion",
+                    title: "周期来临前，你的情绪更接近？",
+                    type: "matrix", // 表情包矩阵
+                    options: [
+                        { id: "e1", icon: "😊", label: "阳光灿烂", scores: { emotion: 5 } },
+                        { id: "e2", icon: "😌", label: "佛系平静", scores: { emotion: 4 } },
+                        { id: "e3", icon: "😢", label: "莫名低落", scores: { emotion: 2 } },
+                        { id: "e4", icon: "😤", label: "一点就炸", scores: { emotion: 1 } },
+                        { id: "e5", icon: "😩", label: "焦虑不安", scores: { emotion: 2 } },
+                        { id: "e6", icon: "🤯", label: "混乱模糊", scores: { emotion: 1 } }
+                    ]
+                },
+                {
+                    id: "habit",
+                    title: "你会坚持记录自己的周期状态吗？",
+                    type: "cards", // 是/否卡片
+                    options: [
+                        { id: "h1", icon: "📝", label: "坚持记录", scores: { regularity: 5 } },
+                        { id: "h2", icon: "🤷‍♀️", label: "偶尔想起", scores: { regularity: 2 } }
+                    ]
+                }
+            ],
+            // 结果映射配置
+            results: {
+                excellent: {
+                    range: [13, 15], // 总分区间
+                    title: "温和的潮汐",
+                    explanation: "你的周期状态非常稳定！身体和情绪都像平静的海面，规律且舒适。这与你良好的自我管理密不可分。",
+                    advice: ["继续保持现有的健康习惯", "可以尝试瑜伽或冥想，维持这种身心平衡", "分享你的保养秘诀给身边的朋友吧"]
+                },
+                good: {
+                    range: [10, 12],
+                    title: "起伏的小波浪",
+                    explanation: "总体状况不错，但偶尔会有小插曲。可能是一些生活习惯的细微变化，或压力导致了轻微的情绪波动或不适。",
+                    advice: ["尝试喝一些温热的草本茶缓解不适", "记录情绪变化，寻找压力源", "使用暖暖贴敷在小腹处"]
+                },
+                needCare: {
+                    range: [3, 9],
+                    title: "汹涌的暗流",
+                    explanation: "周期似乎给你带来了不小的困扰，无论是身体的不适还是情绪的失控，都在提醒你需要更多关爱。不必硬撑，科学的护理很重要。",
+                    advice: ["建议咨询专业医生或药师，了解止痛方案", "避免生冷食物，注重腹部保暖", "在日历中标注易不适时段，提前预防"]
+                }
+            }
+        };
+
+        // ================= 应用状态 =================
+        let currentQuestionIndex = 0;
+        let userScores = { regularity: 0, comfort: 0, emotion: 0 };
+        let selectedOptions = {};
+
+        // ================= 渲染逻辑 =================
+        const questionContainer = document.getElementById('questionContainer');
+        const progressBar = document.getElementById('progressBar');
+
+        function renderQuestion() {
+            const q = quizConfig.questions[currentQuestionIndex];
+            const progress = ((currentQuestionIndex) / quizConfig.questions.length) * 100;
+            progressBar.style.width = `${progress}%`;
+
+            let html = `<div class="question-card" key="${q.id}">`;
+            html += `<h2 class="question-title">${q.title}</h2>`;
+
+            if (q.type === 'slider') {
+                html += `<div class="slider-options">`;
+                q.options.forEach(opt => {
+                    html += `
+                        <div class="slider-item ${selectedOptions[q.id] === opt.id ? 'selected' : ''}" onclick="selectOption('${q.id}', '${opt.id}')">
+                            <div class="slider-icon">${opt.icon}</div>
+                            <div class="slider-label">${opt.label}</div>
+                        </div>`;
+                });
+                html += `</div>`;
+            } else if (q.type === 'matrix') {
+                html += `<div class="emotion-grid">`;
+                q.options.forEach(opt => {
+                    html += `
+                        <div class="emotion-item ${selectedOptions[q.id] === opt.id ? 'selected' : ''}" onclick="selectOption('${q.id}', '${opt.id}')">
+                            <div class="emotion-icon">${opt.icon}</div>
+                            <div class="emotion-desc">${opt.label}</div>
+                        </div>`;
+                });
+                html += `</div>`;
+            } else if (q.type === 'cards') {
+                html += `<div class="choice-cards">`;
+                q.options.forEach(opt => {
+                    html += `
+                        <div class="choice-card ${selectedOptions[q.id] === opt.id ? 'selected' : ''}" onclick="selectOption('${q.id}', '${opt.id}')">
+                            <div class="choice-icon">${opt.icon}</div>
+                            <div class="choice-text">${opt.label}</div>
+                        </div>`;
+                });
+                html += `</div>`;
+            }
+            html += `</div>`;
+            questionContainer.innerHTML = html;
+        }
+
+        function selectOption(qId, optId) {
+            selectedOptions[qId] = optId;
+            
+            // 找到对应的分数并累加 (实际业务中应该是计算增量，此处简化为每次重新计算总分)
+            recalculateScores();
+
+            // 短暂延迟让用户看到选中状态，然后进入下一题或生成报告
+            setTimeout(() => {
+                currentQuestionIndex++;
+                if (currentQuestionIndex < quizConfig.questions.length) {
+                    renderQuestion();
+                } else {
+                    generateReport();
+                }
+            }, 400);
+        }
+
+        function recalculateScores() {
+            // 重置分数
+            userScores = { regularity: 0, comfort: 0, emotion: 0 };
+            
+            // 遍历已选选项累加分数
+            for (let qId in selectedOptions) {
+                const q = quizConfig.questions.find(item => item.id === qId);
+                const opt = q.options.find(item => item.id === selectedOptions[qId]);
+                for (let dim in opt.scores) {
+                    userScores[dim] += opt.scores[dim];
+                }
+            }
+        }
+
+        // ================= 报告生成逻辑 =================
+        function generateReport() {
+            // 切换视图
+            document.getElementById('quizView').style.display = 'none';
+            const reportView = document.getElementById('reportView');
+            reportView.style.display = 'flex';
+
+            // 计算总分并匹配结果
+            const totalScore = userScores.regularity + userScores.comfort + userScores.emotion;
+            let resultData = quizConfig.results.needCare; // 默认
+            
+            if (totalScore >= 13) resultData = quizConfig.results.excellent;
+            else if (totalScore >= 10) resultData = quizConfig.results.good;
+
+            // 渲染文本内容
+            document.getElementById('reportType').textContent = resultData.title;
+            document.getElementById('reportExplanation').textContent = resultData.explanation;
+            
+            const adviceList = document.getElementById('reportAdvice');
+            adviceList.innerHTML = '';
+            resultData.advice.forEach(text => {
+                let li = document.createElement('li');
+                li.textContent = text;
+                adviceList.appendChild(li);
+            });
+
+            // 绘制雷达图
+            renderRadarChart();
+        }
+
+        function renderRadarChart() {
+            const ctx = document.getElementById('radarChart').getContext('2d');
+            // 归一化数据到0-100范围，假设原始满分是5/5/5，这里为了视觉效果放大倍数
+            const data = [
+                (userScores.regularity / 5) * 100,
+                (userScores.comfort / 5) * 100,
+                (userScores.emotion / 5) * 100
+            ];
+
+            new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['规律性', '舒适度', '情绪稳定性'],
+                    datasets: [{
+                        label: '我的周期状态',
+                        data: data,
+                        fill: true,
+                        backgroundColor: 'rgba(0, 102, 177, 0.2)',
+                        borderColor: 'var(--primary)',
+                        pointBackgroundColor: 'var(--secondary)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'var(--primary)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: {
+                            angleLines: { color: '#e8e8e8' },
+                            grid: { color: '#e8e8e8' },
+                            pointLabels: { font: { size: 14, weight: 'bold' }, color: '#333' },
+                            ticks: { display: false },
+                            suggestedMin: 0,
+                            suggestedMax: 100
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        function handleShare() {
+            // 使用 Web Share API 进行原生共享操作（Chrome/Edge 等支持）
+            const resultData = getCurrentResultData();
+            const shareData = {
+                title: '我的周期状态报告 - 周期博物馆',
+                text: `🧚‍♀️ 我的周期状况是「${resultData.title}」！\n来周期博物馆，了解你的身体节律～\n#周期知己#`,
+                url: window.location.href
+            };
+
+            if (navigator.share) {
+                navigator.share(shareData)
+                    .then(() => console.log('分享成功'))
+                    .catch((err) => {
+                        if (err.name !== 'AbortError') {
+                            fallbackShare(shareData);
+                        }
+                    });
+            } else {
+                fallbackShare(shareData);
+            }
+        }
+
+        function fallbackShare(shareData) {
+            // 降级方案：复制文本到剪贴板
+            const shareText = `${shareData.title}\n\n${shareData.text}\n${shareData.url}`;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(shareText).then(() => {
+                    alert('📋 分享内容已复制到剪贴板，快去粘贴分享吧！');
+                }).catch(() => {
+                    alert(shareText);
+                });
+            } else {
+                // 最古老降级：弹窗显示
+                prompt('复制以下内容分享给你的朋友：', shareText);
+            }
+        }
+
+        function getCurrentResultData() {
+            const totalScore = userScores.regularity + userScores.comfort + userScores.emotion;
+            let resultData = quizConfig.results.needCare;
+            if (totalScore >= 13) resultData = quizConfig.results.excellent;
+            else if (totalScore >= 10) resultData = quizConfig.results.good;
+            return resultData;
+        }
+
+        // ================= 初始化 =================
+        document.addEventListener('DOMContentLoaded', () => {
+            renderQuestion();
+        });
+    </script>
+
+    <!-- 底部导航栏 -->
+    <nav class="tab-bar">
+        <a href="index.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <span class="tab-label text-xs">首页</span>
+        </a>
+        <a href="dairy.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span class="tab-label text-xs">日记</span>
+        </a>
+        <a href="test.html" class="tab-item active flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="tab-label text-xs">自测</span>
+        </a>
+        <a href="know.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            <span class="tab-label text-xs">知识</span>
+        </a>
+        <a href="profile.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span class="tab-label text-xs">我的</span>
+        </a>
+    </nav>
+
+</body>
+</html>

@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的 - 周期博物馆</title>
+    <link rel="stylesheet" href="global.css">
+    <style>
+        /* ========== 个人中心专属样式 ========== */
+
+        /* 用户信息卡片 */
+        .profile-header-card {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            padding: var(--space-xl) var(--space-lg);
+            text-align: center;
+            color: var(--white);
+            position: relative;
+            overflow: hidden;
+        }
+        [data-theme="dark"] .profile-header-card {
+            background: linear-gradient(135deg, #1a3a5c 0%, #1a4a7a 100%);
+        }
+        .profile-header-card::before {
+            content: '';
+            position: absolute;
+            width: 200px; height: 200px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 50%;
+            top: -60px; right: -60px;
+        }
+        .profile-header-card::after {
+            content: '';
+            position: absolute;
+            width: 120px; height: 120px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 50%;
+            bottom: -30px; left: -30px;
+        }
+        .profile-avatar {
+            width: 80px; height: 80px;
+            margin: 0 auto var(--space-md);
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            position: relative; z-index: 1;
+            border: 3px solid rgba(255,255,255,0.3);
+        }
+        .profile-avatar svg { width: 50px; height: 50px; }
+        .profile-nickname {
+            font-size: var(--font-xl); font-weight: var(--weight-bold);
+            margin-bottom: var(--space-xs); position: relative; z-index: 1;
+        }
+        .profile-id {
+            font-size: var(--font-sm); opacity: 0.8;
+            position: relative; z-index: 1;
+        }
+        .profile-edit-btn {
+            position: absolute; top: var(--space-md); right: var(--space-md);
+            z-index: 1; background: rgba(255,255,255,0.15);
+            color: var(--white); border: 1px solid rgba(255,255,255,0.2);
+            border-radius: var(--radius-full);
+            padding: var(--space-xs) var(--space-md);
+            font-size: var(--font-xs); cursor: pointer;
+            transition: all var(--duration-fast) var(--ease);
+        }
+        .profile-edit-btn:hover { background: rgba(255,255,255,0.25); }
+
+        /* 数据统计条 */
+        .stats-bar {
+            display: flex;
+            margin: var(--space-md);
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+        .stat-item {
+            flex: 1; text-align: center;
+            padding: var(--space-md) var(--space-sm);
+            position: relative;
+            cursor: pointer;
+            transition: background var(--duration-fast) var(--ease);
+        }
+        .stat-item:hover { background: var(--gray-10); }
+        .stat-item:active { background: var(--gray-30); }
+        .stat-item + .stat-item { border-left: 1px solid var(--gray-30); }
+        .stat-number {
+            font-size: var(--font-xl); font-weight: var(--weight-bold);
+            color: var(--primary); line-height: 1;
+        }
+        .stat-label {
+            font-size: var(--font-xs); color: var(--gray-70);
+            margin-top: var(--space-xs);
+        }
+
+        /* 区块标题 */
+        .section-header {
+            display: flex; align-items: center;
+            padding: var(--space-md) var(--space-lg) var(--space-sm);
+            gap: var(--space-sm);
+        }
+        .section-header__icon {
+            width: 24px; text-align: center;
+            font-size: var(--font-md);
+        }
+        .section-header__title {
+            font-size: var(--font-base); font-weight: var(--weight-bold);
+            color: var(--gray-100);
+        }
+
+        /* 快捷入口卡片 */
+        .quick-entry-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-md);
+            padding: 0 var(--space-md) var(--space-md);
+        }
+        .quick-entry-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg) var(--space-md);
+            text-align: center;
+            box-shadow: var(--shadow-sm);
+            cursor: pointer;
+            transition: all var(--duration-base) var(--ease);
+            border: 1px solid var(--gray-30);
+            display: flex; flex-direction: column;
+            align-items: center; gap: var(--space-sm);
+        }
+        .quick-entry-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+        .quick-entry-card:active { transform: scale(0.97); }
+        .quick-entry-card__icon {
+            font-size: 2rem; line-height: 1;
+        }
+        .quick-entry-card__title {
+            font-size: var(--font-sm); font-weight: var(--weight-bold);
+            color: var(--gray-100);
+        }
+        .quick-entry-card__desc {
+            font-size: var(--font-xs); color: var(--gray-70);
+        }
+
+        /* 收藏列表 */
+        .fav-list {
+            padding: 0 var(--space-md) var(--space-md);
+            display: flex; flex-direction: column; gap: var(--space-sm);
+        }
+        .fav-item {
+            background: var(--white); border-radius: var(--radius-md);
+            padding: var(--space-md);
+            box-shadow: var(--shadow-sm);
+            cursor: pointer;
+            transition: all var(--duration-fast) var(--ease);
+            display: flex; align-items: center; gap: var(--space-md);
+        }
+        .fav-item:hover { background: var(--gray-10); }
+        .fav-item:active { transform: scale(0.98); }
+        .fav-item__icon {
+            width: 40px; height: 40px;
+            background: var(--pale-blue); border-radius: var(--radius-md);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; flex-shrink: 0;
+        }
+        .fav-item__info { flex: 1; min-width: 0; }
+        .fav-item__title {
+            font-size: var(--font-sm); font-weight: var(--weight-medium);
+            color: var(--gray-100); overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+        }
+        .fav-item__desc {
+            font-size: var(--font-xs); color: var(--gray-70);
+            margin-top: 2px;
+        }
+
+        /* 空状态 */
+        .profile-empty {
+            text-align: center; padding: var(--space-xl) var(--space-md);
+            color: var(--gray-70);
+        }
+        .profile-empty__icon { font-size: 2.5rem; margin-bottom: var(--space-sm); }
+        .profile-empty__text { font-size: var(--font-sm); }
+
+        /* 昵称编辑弹窗 */
+        .nickname-modal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); z-index: 2000;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden;
+            transition: all var(--duration-base) var(--ease);
+            padding: var(--space-md);
+        }
+        .nickname-modal.active { opacity: 1; visibility: visible; }
+        .nickname-modal__box {
+            background: var(--white); border-radius: var(--radius-lg);
+            padding: var(--space-xl); width: 100%; max-width: 360px;
+            box-shadow: var(--shadow-lg);
+            transform: translateY(20px);
+            transition: transform var(--duration-base) var(--ease);
+        }
+        .nickname-modal.active .nickname-modal__box {
+            transform: translateY(0);
+        }
+        .nickname-modal__title {
+            font-size: var(--font-lg); font-weight: var(--weight-bold);
+            margin-bottom: var(--space-lg); text-align: center;
+        }
+        .nickname-modal__input {
+            width: 100%; padding: var(--space-md);
+            border: 2px solid var(--gray-50); border-radius: var(--radius-md);
+            font-size: var(--font-base); text-align: center;
+            margin-bottom: var(--space-lg);
+            transition: border-color var(--duration-fast) var(--ease);
+        }
+        .nickname-modal__input:focus {
+            outline: none; border-color: var(--primary);
+        }
+        .nickname-modal__actions {
+            display: flex; gap: var(--space-md);
+        }
+        .nickname-modal__actions .btn { flex: 1; }
+
+        /* 主内容区域 */
+        .profile-main {
+            padding-bottom: calc(var(--footer-h) + var(--space-md));
+            animation: pageEnter 0.35s var(--ease) both;
+        }
+
+        /* 响应式 */
+        @media (min-width: 768px) {
+            .profile-main { max-width: 720px; margin: 0 auto; }
+            .quick-entry-grid { grid-template-columns: repeat(4, 1fr); }
+        }
+        @media (max-width: 360px) {
+            .stats-bar { margin: var(--space-sm); }
+            .stat-item { padding: var(--space-sm) var(--space-xs); }
+            .quick-entry-grid { gap: var(--space-sm); padding: 0 var(--space-sm) var(--space-sm); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 顶部导航栏 -->
+    <header class="navbar bg-white">
+        <a href="index.html" class="back-home-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回大厅
+        </a>
+        <h1 class="text-lg weight-medium">我的</h1>
+        <div style="width: 60px;"></div>
+    </header>
+
+    <main class="profile-main">
+
+        <!-- 用户信息头部 -->
+        <section class="profile-header-card">
+            <button class="profile-edit-btn" onclick="openNicknameModal()">✏️ 编辑</button>
+            <div class="profile-avatar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="8" r="5"/>
+                    <path d="M4 22c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+                </svg>
+            </div>
+            <div class="profile-nickname" id="displayNickname">周期知己</div>
+            <div class="profile-id" id="displayId">ID: 暖暖#0001</div>
+        </section>
+
+        <!-- 数据统计 -->
+        <section class="stats-bar">
+            <div class="stat-item" onclick="location.href='dairy.html'">
+                <div class="stat-number" id="statDiaryDays">0</div>
+                <div class="stat-label">日记天数</div>
+            </div>
+            <div class="stat-item" onclick="location.href='test.html'">
+                <div class="stat-number" id="statTestCount">0</div>
+                <div class="stat-label">自测次数</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="statFavCount">0</div>
+                <div class="stat-label">收藏文章</div>
+            </div>
+            <div class="stat-item" onclick="location.href='bbs.html'">
+                <div class="stat-number" id="statPostCount">0</div>
+                <div class="stat-label">我的心声</div>
+            </div>
+        </section>
+
+        <!-- 快捷入口 -->
+        <div class="section-header">
+            <span class="section-header__icon">🚀</span>
+            <span class="section-header__title">快捷入口</span>
+        </div>
+        <section class="quick-entry-grid">
+            <div class="quick-entry-card" onclick="location.href='dairy.html'">
+                <div class="quick-entry-card__icon">📅</div>
+                <div class="quick-entry-card__title">周期日记</div>
+                <div class="quick-entry-card__desc">查看日历记录</div>
+            </div>
+            <div class="quick-entry-card" onclick="location.href='test.html'">
+                <div class="quick-entry-card__icon">🧪</div>
+                <div class="quick-entry-card__title">健康自测</div>
+                <div class="quick-entry-card__desc">评估周期状态</div>
+            </div>
+            <div class="quick-entry-card" onclick="location.href='know.html'">
+                <div class="quick-entry-card__icon">📚</div>
+                <div class="quick-entry-card__title">知识收藏</div>
+                <div class="quick-entry-card__desc">查看已收藏文章</div>
+            </div>
+            <div class="quick-entry-card" onclick="location.href='bbs.html'">
+                <div class="quick-entry-card__icon">💬</div>
+                <div class="quick-entry-card__title">我的心声</div>
+                <div class="quick-entry-card__desc">查看已发布内容</div>
+            </div>
+        </section>
+
+        <!-- 最近收藏 -->
+        <div class="section-header">
+            <span class="section-header__icon">❤️</span>
+            <span class="section-header__title">最近收藏</span>
+        </div>
+        <section class="fav-list" id="favList">
+            <div class="profile-empty">
+                <div class="profile-empty__icon">📭</div>
+                <div class="profile-empty__text">还没有收藏内容，去知识馆看看吧～</div>
+            </div>
+        </section>
+
+        <!-- 设置 -->
+        <div class="section-header">
+            <span class="section-header__icon">⚙️</span>
+            <span class="section-header__title">设置</span>
+        </div>
+        <div style="padding: 0 var(--space-md);">
+            <div class="settings-list">
+
+                <!-- 深色模式开关 -->
+                <div class="settings-item" onclick="toggleTheme()" id="themeToggleItem">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">🌓</span>
+                        <span class="settings-item__label">深色模式</span>
+                    </div>
+                    <div class="switch-wrapper">
+                        <span class="settings-item__right" id="themeLabel">浅色</span>
+                        <label class="switch" onclick="event.stopPropagation()">
+                            <input type="checkbox" id="themeSwitch" onchange="toggleTheme()">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 重置昵称 -->
+                <div class="settings-item" onclick="randomNickname()">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">🎭</span>
+                        <span class="settings-item__label">随机更换昵称</span>
+                    </div>
+                    <div class="settings-item__right">点击刷新 →</div>
+                </div>
+
+                <!-- 重置日记数据 -->
+                <div class="settings-item" onclick="resetDiaryData()">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">📅</span>
+                        <span class="settings-item__label">重置日记数据</span>
+                    </div>
+                    <div class="settings-item__right">清空 →</div>
+                </div>
+
+                <!-- 重置自测数据 -->
+                <div class="settings-item" onclick="resetTestData()">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">🧪</span>
+                        <span class="settings-item__label">重置自测数据</span>
+                    </div>
+                    <div class="settings-item__right">清空 →</div>
+                </div>
+
+                <!-- 重置共鸣墙数据 -->
+                <div class="settings-item" onclick="resetWallData()">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">💬</span>
+                        <span class="settings-item__label">重置共鸣墙数据</span>
+                    </div>
+                    <div class="settings-item__right">清空 →</div>
+                </div>
+
+                <!-- 重置知识馆收藏 -->
+                <div class="settings-item" onclick="resetFavorites()">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">❤️</span>
+                        <span class="settings-item__label">重置收藏数据</span>
+                    </div>
+                    <div class="settings-item__right">清空 →</div>
+                </div>
+
+                <!-- 清除全部本地缓存 -->
+                <div class="settings-item" onclick="resetAllData()" style="color: var(--error);">
+                    <div class="settings-item__left">
+                        <span class="settings-item__icon">⚠️</span>
+                        <span class="settings-item__label" style="color: var(--error);">清除全部本地缓存</span>
+                    </div>
+                    <div class="settings-item__right" style="color: var(--error);">重置 →</div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 版本信息 -->
+        <div class="text-center" style="padding: var(--space-xl); color: var(--gray-70); font-size: var(--font-xs);">
+            <p>周期博物馆 v2.1</p>
+            <p style="margin-top: 4px;">拜耳 · 周期知己</p>
+        </div>
+
+    </main>
+
+    <!-- 底部导航栏 -->
+    <nav class="tab-bar">
+        <a href="index.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <span class="tab-label text-xs">首页</span>
+        </a>
+        <a href="dairy.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span class="tab-label text-xs">日记</span>
+        </a>
+        <a href="test.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="tab-label text-xs">自测</span>
+        </a>
+        <a href="know.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            <span class="tab-label text-xs">知识</span>
+        </a>
+        <a href="profile.html" class="tab-item active flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span class="tab-label text-xs">我的</span>
+        </a>
+    </nav>
+
+    <!-- 昵称编辑弹窗 -->
+    <div class="nickname-modal" id="nicknameModal">
+        <div class="nickname-modal__box">
+            <div class="nickname-modal__title">✏️ 修改昵称</div>
+            <input type="text" class="nickname-modal__input" id="nicknameInput" placeholder="输入你的昵称..." maxlength="12">
+            <div class="nickname-modal__actions">
+                <button class="btn btn--ghost" onclick="closeNicknameModal()">取消</button>
+                <button class="btn btn--primary" onclick="saveNickname()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 主题管理 ====================
+        function initTheme() {
+            const saved = localStorage.getItem('theme');
+            const theme = saved || 'light';
+            applyTheme(theme);
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.getElementById('themeSwitch').checked = (theme === 'dark');
+            document.getElementById('themeLabel').textContent = theme === 'dark' ? '深色' : '浅色';
+            localStorage.setItem('theme', theme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            applyTheme(next);
+            showToast(next === 'dark' ? '🌙 已切换至深色模式' : '☀️ 已切换至浅色模式');
+        }
+
+        // ==================== 用户信息 ====================
+        const ANIMALS = ['小鲸鱼', '软萌兔', '北极熊', '长颈鹿', '小松鼠', '考拉', '企鹅', '小海豚', '布偶猫', '萨摩耶'];
+        const COLORS = ['暖暖', '软软', '圆圆', '团团', '绵绵', '甜甜', '欣欣', '悦悦', '安安', '萌萌'];
+
+        function getUserProfile() {
+            let profile = JSON.parse(localStorage.getItem('user_profile'));
+            if (!profile) {
+                const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+                const num = Math.floor(Math.random() * 900) + 100;
+                profile = {
+                    nickname: animal + num,
+                    id: '暖暖#' + String(Math.floor(Math.random() * 9000) + 1000).padStart(4, '0')
+                };
+                localStorage.setItem('user_profile', JSON.stringify(profile));
+            }
+            return profile;
+        }
+
+        function updateDisplay() {
+            const profile = getUserProfile();
+            document.getElementById('displayNickname').textContent = profile.nickname;
+            document.getElementById('displayId').textContent = 'ID: ' + profile.id;
+            document.getElementById('nicknameInput').value = profile.nickname;
+        }
+
+        function randomNickname() {
+            const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+            const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+            const num = Math.floor(Math.random() * 900) + 100;
+            const profile = getUserProfile();
+            profile.nickname = color + '的' + animal + num;
+            localStorage.setItem('user_profile', JSON.stringify(profile));
+            updateDisplay();
+            showToast('🎭 昵称已更新：' + profile.nickname);
+        }
+
+        function openNicknameModal() {
+            document.getElementById('nicknameInput').value = getUserProfile().nickname;
+            document.getElementById('nicknameModal').classList.add('active');
+            setTimeout(() => document.getElementById('nicknameInput').focus(), 100);
+        }
+
+        function closeNicknameModal() {
+            document.getElementById('nicknameModal').classList.remove('active');
+        }
+
+        function saveNickname() {
+            const val = document.getElementById('nicknameInput').value.trim();
+            if (!val) { showToast('昵称不能为空哦'); return; }
+            if (val.length > 12) { showToast('昵称最多12个字符'); return; }
+            const profile = getUserProfile();
+            profile.nickname = val;
+            localStorage.setItem('user_profile', JSON.stringify(profile));
+            updateDisplay();
+            closeNicknameModal();
+            showToast('✅ 昵称已保存');
+        }
+
+        // ==================== 数据统计 ====================
+        function updateStats() {
+            // 日记天数
+            let diaryDays = 0;
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('cycleLog_')) {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    diaryDays += Object.keys(data).length;
+                }
+            }
+            document.getElementById('statDiaryDays').textContent = diaryDays;
+
+            // 自测次数
+            const testHistory = JSON.parse(localStorage.getItem('test_history') || '[]');
+            document.getElementById('statTestCount').textContent = testHistory.length;
+
+            // 收藏数
+            const favs = JSON.parse(localStorage.getItem('kb_favorites') || '[]');
+            document.getElementById('statFavCount').textContent = favs.length;
+
+            // 心声数
+            const posts = JSON.parse(localStorage.getItem('wall_posts') || '[]');
+            document.getElementById('statPostCount').textContent = posts.length;
+        }
+
+        // ==================== 收藏列表 ====================
+        function renderFavorites() {
+            const favs = JSON.parse(localStorage.getItem('kb_favorites') || '[]');
+            const container = document.getElementById('favList');
+
+            if (favs.length === 0) {
+                container.innerHTML = `
+                    <div class="profile-empty">
+                        <div class="profile-empty__icon">📭</div>
+                        <div class="profile-empty__text">还没有收藏内容，去知识馆看看吧～</div>
+                    </div>`;
+                return;
+            }
+
+            // 知识馆文章数据（与 know.html 同步）
+            const knowledgeData = [
+                { id: "art_001", title: "痛经真的因为吃冰吗？", summary: "关于经期的最大迷思，今天为你解开。" },
+                { id: "art_002", title: "28天身体漫游指南", summary: "了解你的28天周期，掌握身体的节律魔法。" },
+                { id: "art_003", title: "经期舒缓瑜伽", summary: "不需要剧烈运动，这几个姿势帮你缓解不适。" },
+                { id: "art_004", title: "拥抱经前综合症(PMS)", summary: "突然的emo不是你的错，是激素在捣蛋。" }
+            ];
+
+            container.innerHTML = favs.map(id => {
+                const article = knowledgeData.find(a => a.id === id);
+                if (!article) return '';
+                return `
+                    <div class="fav-item" onclick="location.href='know.html'">
+                        <div class="fav-item__icon">📖</div>
+                        <div class="fav-item__info">
+                            <div class="fav-item__title">${article.title}</div>
+                            <div class="fav-item__desc">${article.summary}</div>
+                        </div>
+                        <span style="color: var(--error); font-size: 1.2rem;">❤️</span>
+                    </div>`;
+            }).join('');
+        }
+
+        // ==================== 数据重置 ====================
+        function resetDiaryData() {
+            if (!confirm('确定要重置所有日记数据吗？此操作不可撤销。')) return;
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('cycleLog_') || key === 'cycle_config') keys.push(key);
+            }
+            keys.forEach(k => localStorage.removeItem(k));
+            updateStats();
+            showToast('✅ 日记数据已重置');
+        }
+
+        function resetTestData() {
+            if (!confirm('确定要重置所有自测数据吗？此操作不可撤销。')) return;
+            localStorage.removeItem('test_history');
+            updateStats();
+            showToast('✅ 自测数据已重置');
+        }
+
+        function resetWallData() {
+            if (!confirm('确定要重置共鸣墙数据吗？此操作不可撤销。')) return;
+            localStorage.removeItem('wall_posts');
+            localStorage.removeItem('wall_interactions');
+            localStorage.removeItem('wall_nickname');
+            updateStats();
+            showToast('✅ 共鸣墙数据已重置');
+        }
+
+        function resetFavorites() {
+            if (!confirm('确定要重置所有收藏数据吗？此操作不可撤销。')) return;
+            localStorage.removeItem('kb_favorites');
+            localStorage.removeItem('kb_badges');
+            updateStats();
+            renderFavorites();
+            showToast('✅ 收藏数据已重置');
+        }
+
+        function resetAllData() {
+            if (!confirm('⚠️ 确定要清除全部本地缓存吗？\n\n这将删除：\n• 日记数据\n• 自测数据\n• 共鸣墙数据\n• 收藏与勋章\n• 昵称设置\n• 主题偏好\n\n此操作不可撤销！')) return;
+            // 保留主题和用户档案
+            const theme = localStorage.getItem('theme');
+            const profile = localStorage.getItem('user_profile');
+            localStorage.clear();
+            if (theme) localStorage.setItem('theme', theme);
+            if (profile) localStorage.setItem('user_profile', profile);
+            updateStats();
+            renderFavorites();
+            updateDisplay();
+            initTheme();
+            showToast('✅ 全部缓存已清除（主题和昵称已保留）');
+        }
+
+        // ==================== Toast ====================
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => toast.remove(), 300);
+            }, 1800);
+        }
+
+        // ==================== 弹窗关闭 ====================
+        document.getElementById('nicknameModal').addEventListener('click', function(e) {
+            if (e.target === this) closeNicknameModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeNicknameModal();
+        });
+
+        // ==================== 初始化 ====================
+        function init() {
+            initTheme();
+            updateDisplay();
+            updateStats();
+            renderFavorites();
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

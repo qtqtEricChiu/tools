@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>周期博物馆 - 首页</title>
+    <!-- 引入提取出的全局CSS文件 -->
+    <link rel="stylesheet" href="global.css">
+    <style>
+        /* 首页专属样式补充 */
+        .hero-section {
+            padding: var(--space-xl) var(--space-md) var(--space-lg);
+            text-align: center;
+            background: linear-gradient(180deg, rgba(0, 102, 177, 0.06) 0%, rgba(122, 193, 66, 0.04) 40%, var(--white) 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .museum-title {
+            font-size: var(--font-xxl);
+            font-weight: var(--weight-bold);
+            color: var(--primary);
+            margin-bottom: var(--space-sm);
+            letter-spacing: 1px;
+        }
+        
+        .museum-subtitle {
+            font-size: var(--font-base);
+            color: var(--gray-90);
+            margin-bottom: var(--space-xl);
+            line-height: var(--line-loose);
+        }
+
+        /* IP形象容器 */
+        .ip-mascot {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto var(--space-md);
+            background: var(--warm-yellow);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 20px rgba(255, 249, 230, 0.6);
+            position: relative;
+        }
+        
+        .ip-mascot svg {
+            width: 80px;
+            height: 80px;
+        }
+
+        /* 展馆入口网格 */
+        .hall-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-md);
+            padding: 0 var(--space-md) var(--space-lg);
+        }
+
+        .hall-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: var(--space-lg) var(--space-md);
+            text-align: center;
+            box-shadow: var(--shadow-sm);
+            transition: all var(--duration-base) var(--ease);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--gray-30);
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 160px;
+        }
+
+        .hall-card:hover, .hall-card:active {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: var(--shadow-lg);
+            border-color: transparent;
+        }
+
+        .hall-card__icon {
+            width: 56px;
+            height: 56px;
+            border-radius: var(--radius-full);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: var(--space-md);
+            color: var(--white);
+        }
+
+        .hall-card__title {
+            font-size: var(--font-md);
+            font-weight: var(--weight-bold);
+            color: var(--gray-100);
+            margin-bottom: var(--space-xs);
+        }
+
+        .hall-card__desc {
+            font-size: var(--font-xs);
+            color: var(--gray-90);
+            line-height: var(--line-base);
+        }
+
+        /* 展馆特色配色 */
+        .hall-card--diary .hall-card__icon { background: var(--error); box-shadow: 0 4px 12px rgba(255,107,107,0.3); }
+        .hall-card--diary:hover { background: rgba(255,107,107,0.03); }
+        
+        .hall-card--test .hall-card__icon { background: var(--primary); box-shadow: 0 4px 12px rgba(0,102,177,0.3); }
+        .hall-card--test:hover { background: rgba(0,102,177,0.03); }
+        
+        .hall-card--know .hall-card__icon { background: var(--secondary); box-shadow: 0 4px 12px rgba(122,193,66,0.3); }
+        .hall-card--know:hover { background: rgba(122,193,66,0.03); }
+        
+        .hall-card--wall .hall-card__icon { background: #AB47BC; box-shadow: 0 4px 12px rgba(171,71,188,0.3); }
+        .hall-card--wall:hover { background: rgba(171,71,188,0.03); }
+
+        /* 底部导航激活态 - 品牌色强调 */
+        .tab-item.active .tab-icon { color: var(--primary); }
+        .tab-item.active .tab-label { color: var(--primary); font-weight: var(--weight-bold); }
+        .tab-item.active { background: rgba(0, 102, 177, 0.04); border-radius: var(--radius-md); }
+
+        .welcome-tip {
+            background: rgba(122, 193, 66, 0.1);
+            color: #2e7d32;
+            border: 1px solid rgba(122, 193, 66, 0.2);
+            padding: var(--space-sm) var(--space-md);
+            border-radius: var(--radius-full);
+            font-size: var(--font-xs);
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-xs);
+            margin-bottom: var(--space-lg);
+            animation: pulse 2s infinite;
+        }
+
+        /* 浮动装饰 */
+        .decor-circle {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.1;
+            z-index: 0;
+        }
+        .decor-c1 { width: 150px; height: 150px; background: var(--primary); top: -50px; left: -30px; }
+        .decor-c2 { width: 100px; height: 100px; background: var(--secondary); bottom: 20px; right: -20px; }
+    </style>
+</head>
+<body>
+    <div class="container main-content page-enter">
+        <!-- 顶部导航栏 -->
+        <header class="navbar bg-white">
+            <div class="flex items-center gap-2">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                <span class="weight-bold text-primary">周期博物馆</span>
+            </div>
+            <button class="btn btn--ghost btn--sm flex items-center gap-1" onclick="location.href='profile.html'">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                我的
+            </button>
+        </header>
+
+        <!-- 博物馆大厅 Hero 区 -->
+        <section class="hero-section">
+            <div class="decor-circle decor-c1"></div>
+            <div class="decor-circle decor-c2"></div>
+            
+            <div class="ip-mascot ip-float">
+                <!-- 简笔IP形象：小黄体暖暖 占位SVG -->
+                <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="50" r="45" fill="#FFD93D"/>
+                    <circle cx="35" cy="42" r="5" fill="#333"/>
+                    <circle cx="65" cy="42" r="5" fill="#333"/>
+                    <path d="M35 60 Q50 75 65 60" stroke="#333" stroke-width="3" fill="none" stroke-linecap="round"/>
+                    <circle cx="28" cy="55" r="8" fill="#FFB7B2" opacity="0.6"/>
+                    <circle cx="72" cy="55" r="8" fill="#FFB7B2" opacity="0.6"/>
+                </svg>
+            </div>
+
+            <div class="welcome-tip">
+                💡 暖暖带你看展
+            </div>
+            
+            <h1 class="museum-title">欢迎来到周期博物馆</h1>
+            <p class="museum-subtitle">探索身体的奇妙周期，<br>发现更懂自己的你。</p>
+        </section>
+
+        <!-- 主题展览馆入口 -->
+        <section class="hall-grid">
+            <!-- 日记馆 -->
+            <a href="dairy.html" class="hall-card hall-card--diary card-stagger-1">
+                <div class="hall-card__icon">📅</div>
+                <div class="hall-card__title">28天日记馆</div>
+                <div class="hall-card__desc">记录每日身心变化</div>
+            </a>
+
+            <!-- 自测站 -->
+            <a href="test.html" class="hall-card hall-card--test card-stagger-2">
+                <div class="hall-card__icon">🧪</div>
+                <div class="hall-card__title">状态自测站</div>
+                <div class="hall-card__desc">趣味评估周期状况</div>
+            </a>
+
+            <!-- 知识馆 -->
+            <a href="know.html" class="hall-card hall-card--know card-stagger-3">
+                <div class="hall-card__icon">📚</div>
+                <div class="hall-card__title">周期知识馆</div>
+                <div class="hall-card__desc">科学解读生理奥秘</div>
+            </a>
+
+            <!-- 共鸣墙 -->
+            <a href="bbs.html" class="hall-card hall-card--wall card-stagger-4">
+                <div class="hall-card__icon">💬</div>
+                <div class="hall-card__title">匿名共鸣墙</div>
+                <div class="hall-card__desc">暖心树洞倾诉心声</div>
+            </a>
+        </section>
+    </div>
+
+    <!-- 全局底部导航 -->
+    <nav class="tab-bar">
+        <a href="index.html" class="tab-item active flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <span class="tab-label text-xs">首页</span>
+        </a>
+        <a href="dairy.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span class="tab-label text-xs">日记</span>
+        </a>
+        <a href="test.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="tab-label text-xs">自测</span>
+        </a>
+        <a href="know.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            <span class="tab-label text-xs">知识</span>
+        </a>
+        <a href="profile.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span class="tab-label text-xs">我的</span>
+        </a>
+    </nav>
+
+    <script>
+        // 主题初始化
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t) document.documentElement.setAttribute('data-theme', t);
+        })();
+
+        // 为卡片添加点击涟漪效果增强交互感
+        document.querySelectorAll('.hall-card').forEach(card => {
+            card.addEventListener('click', function(e) {
+                // 创建涟漪元素
+                const ripple = document.createElement('div');
+                ripple.style.position = 'absolute';
+                ripple.style.borderRadius = '50%';
+                ripple.style.backgroundColor = 'rgba(255, 255, 255, 0.6)';
+                ripple.style.transform = 'scale(0)';
+                ripple.style.animation = 'clickRipple 0.6s linear';
+                ripple.style.pointerEvents = 'none';
+                
+                // 计算位置和大小
+                const rect = this.getBoundingClientRect();
+                const size = Math.max(rect.width, rect.height);
+                ripple.style.width = ripple.style.height = `${size}px`;
+                ripple.style.left = `${e.clientX - rect.left - size/2}px`;
+                ripple.style.top = `${e.clientY - rect.top - size/2}px`;
+                
+                this.appendChild(ripple);
+                
+                // 动画结束后移除
+                setTimeout(() => {
+                    ripple.remove();
+                }, 600);
+            });
+        });
+
+        // 骨架屏或延迟加载优化模拟（如有图片需加载）
+        window.addEventListener('load', () => {
+            document.body.style.opacity = '1';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>匿名共鸣墙 - 周期博物馆</title>
+    <link rel="stylesheet" href="global.css">
+    <style>
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--gray-10);
+            color: var(--gray-100);
+            margin: 0;
+            padding: 0;
+            padding-bottom: 220px; /* 为底部发布器 + 导航栏留空 */
+        }
+
+        /* 顶部导航 */
+        .nav-header {
+            position: sticky; top: 0; z-index: 100;
+            background: var(--white);
+            padding: var(--space-md);
+            box-shadow: var(--shadow-sm);
+            display: flex; align-items: center; gap: var(--space-md);
+        }
+
+        /* 卡片流布局 */
+        .wall-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: var(--space-md);
+            display: flex; flex-direction: column; gap: var(--space-md);
+        }
+
+        /* ========== 首次用户引导遮罩 ========== */
+        .onboarding-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            display: flex; align-items: center; justify-content: center;
+            padding: var(--space-md);
+            animation: fadeIn 0.3s var(--ease);
+        }
+        .onboarding-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl) var(--space-lg);
+            max-width: 360px; width: 100%;
+            text-align: center;
+            box-shadow: var(--shadow-lg);
+            animation: scaleIn 0.4s var(--ease-spring);
+        }
+        .onboarding-card__icon {
+            font-size: 3rem; margin-bottom: var(--space-md);
+            animation: float 3s var(--ease) infinite;
+        }
+        .onboarding-card__title {
+            font-size: var(--font-lg); font-weight: var(--weight-bold);
+            color: var(--gray-100); margin-bottom: var(--space-sm);
+        }
+        .onboarding-card__desc {
+            font-size: var(--font-sm); color: var(--gray-90);
+            line-height: var(--line-loose); margin-bottom: var(--space-lg);
+        }
+        .onboarding-card__nickname {
+            display: inline-flex; align-items: center; gap: var(--space-xs);
+            background: var(--pale-blue); color: var(--primary);
+            padding: var(--space-xs) var(--space-md);
+            border-radius: var(--radius-full);
+            font-size: var(--font-sm); font-weight: var(--weight-bold);
+            margin-bottom: var(--space-md);
+        }
+        .onboarding-card__nickname .refresh-icon {
+            cursor: pointer; font-size: var(--font-xs);
+            opacity: 0.6; transition: opacity 0.2s;
+        }
+        .onboarding-card__nickname .refresh-icon:hover { opacity: 1; }
+        .onboarding-card .btn--primary {
+            width: 100%; padding: var(--space-md);
+            font-size: var(--font-base);
+        }
+
+        /* ========== 匿名昵称提示条 ========== */
+        .identity-bar {
+            background: var(--pale-blue);
+            border: 1px solid rgba(0, 102, 177, 0.15);
+            border-radius: var(--radius-md);
+            padding: var(--space-sm) var(--space-md);
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: var(--font-xs); color: var(--primary);
+            margin-bottom: 0;
+        }
+        .identity-bar__nickname {
+            font-weight: var(--weight-bold);
+        }
+        .identity-bar__hint {
+            color: var(--gray-70); font-size: var(--font-xs);
+        }
+
+        /* ========== 心声卡片 ========== */
+        .thought-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            padding: var(--space-lg);
+            transition: all var(--duration-base) var(--ease);
+            animation: scaleIn 0.4s var(--ease-spring);
+            border: 1px solid var(--gray-30);
+            position: relative;
+        }
+        .thought-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+        .thought-card.my-post {
+            border-left: 3px solid var(--primary);
+        }
+        
+        .card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: var(--space-md);
+        }
+        .nickname { color: var(--primary); font-weight: var(--weight-bold); font-size: var(--font-base); }
+        .nickname.is-me {
+            position: relative;
+        }
+        .nickname.is-me::after {
+            content: '(我)';
+            font-size: var(--font-xs); color: var(--gray-70);
+            font-weight: var(--weight-normal); margin-left: 2px;
+        }
+        .warm-badge { 
+            font-size: var(--font-xs); background: var(--warm-yellow); color: #FF8F00; 
+            padding: 2px 8px; border-radius: var(--radius-full); 
+        }
+        .card-time { font-size: var(--font-xs); color: var(--gray-70); margin-left: auto; margin-right: var(--space-sm); }
+        
+        .card-body { font-size: var(--font-base); line-height: var(--line-loose); margin-bottom: var(--space-lg); color: var(--gray-100); }
+        .card-tags { display: flex; gap: var(--space-sm); margin-bottom: var(--space-md); flex-wrap: wrap; }
+        .tag { font-size: var(--font-xs); color: var(--primary-light); background: var(--pale-blue); padding: 2px 8px; border-radius: var(--radius-sm); }
+        
+        .card-footer { border-top: 1px solid var(--gray-30); padding-top: var(--space-md); display: flex; justify-content: space-around; }
+        .reaction-btn {
+            background: none; border: none; display: flex; align-items: center; gap: var(--space-xs);
+            color: var(--gray-90); font-size: var(--font-sm); cursor: pointer;
+            transition: all 0.2s var(--ease); padding: var(--space-xs) var(--space-sm);
+            border-radius: var(--radius-md);
+        }
+        .reaction-btn:hover { background: var(--gray-10); }
+        .reaction-btn.active { color: var(--error); background: var(--soft-pink); font-weight: var(--weight-bold); }
+        .reaction-btn .icon { font-size: var(--font-md); }
+        
+        .report-btn {
+            position: absolute; top: var(--space-sm); right: var(--space-sm);
+            background: none; border: none; color: var(--gray-70); font-size: var(--font-xs); cursor: pointer;
+        }
+
+        /* ========== 底部发布器 ========== */
+        .publisher {
+            position: fixed; bottom: var(--footer-h); left: 0; right: 0;
+            background: var(--white);
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
+            padding: var(--space-md);
+            z-index: 90;
+            transition: background var(--duration-base) var(--ease);
+        }
+        .publisher-inner {
+            max-width: 600px; margin: 0 auto;
+            display: flex; flex-direction: column; gap: var(--space-sm);
+        }
+        .tag-selector { display: flex; gap: var(--space-sm); overflow-x: auto; padding-bottom: var(--space-xs); }
+        .tag-selector::-webkit-scrollbar { height: 0; }
+        .tag-chip {
+            white-space: nowrap; border: 1px solid var(--gray-50); background: var(--white);
+            padding: 4px 12px; border-radius: var(--radius-full); font-size: var(--font-xs);
+            cursor: pointer; transition: all 0.2s;
+            user-select: none;
+        }
+        .tag-chip.selected { border-color: var(--primary); background: var(--pale-blue); color: var(--primary); }
+        
+        .input-row { display: flex; gap: var(--space-sm); align-items: center; }
+        .input-field {
+            flex: 1; border: 1px solid var(--gray-50); border-radius: var(--radius-lg);
+            padding: var(--space-sm) var(--space-md); font-size: var(--font-base);
+            font-family: var(--font-sans); resize: none; height: 40px;
+            transition: border-color 0.2s; background: var(--white); color: var(--gray-100);
+        }
+        .input-field:focus { outline: none; border-color: var(--primary); }
+        .input-field::placeholder { color: var(--gray-70); }
+        .submit-btn {
+            background: var(--secondary); color: var(--white); border: none;
+            border-radius: var(--radius-full); width: 40px; height: 40px;
+            font-size: var(--font-md); cursor: pointer;
+            transition: all 0.2s var(--ease-spring);
+            box-shadow: 0 2px 8px rgba(122, 193, 66, 0.3);
+            flex-shrink: 0;
+        }
+        .submit-btn:active { transform: scale(0.9); }
+        .submit-btn:hover { background: var(--secondary-light); }
+
+        /* ========== 通知栏 ========== */
+        .notice-bar {
+            background: var(--warm-yellow); color: #856404; text-align: center;
+            font-size: var(--font-xs); padding: var(--space-xs); margin-bottom: var(--space-sm);
+            border-radius: var(--radius-sm);
+        }
+
+        /* ========== 空状态 ========== */
+        .empty-hint {
+            text-align: center; padding: var(--space-xl) var(--space-md);
+            color: var(--gray-70); font-size: var(--font-sm);
+            animation: fadeIn 0.6s var(--ease);
+        }
+        .empty-hint__icon {
+            font-size: 2.5rem; display: block; margin-bottom: var(--space-md);
+        }
+
+        /* ========== 深色模式适配 ========== */
+        [data-theme="dark"] .nav-header { background: var(--gray-30); }
+        [data-theme="dark"] .thought-card { background: var(--gray-30); border-color: var(--gray-50); }
+        [data-theme="dark"] .publisher { background: var(--gray-30); }
+        [data-theme="dark"] .input-field { background: var(--gray-10); border-color: var(--gray-50); color: var(--gray-100); }
+        [data-theme="dark"] .input-field:focus { border-color: var(--primary); }
+        [data-theme="dark"] .tag-chip { background: var(--gray-30); border-color: var(--gray-50); color: var(--gray-90); }
+        [data-theme="dark"] .tag-chip.selected { background: var(--pale-blue); color: var(--primary-light); border-color: var(--primary-light); }
+        [data-theme="dark"] .identity-bar { background: rgba(77, 157, 217, 0.08); border-color: rgba(77, 157, 217, 0.15); }
+        [data-theme="dark"] .onboarding-card { background: var(--gray-30); }
+
+        /* ========== 动画关键帧 ========== */
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        @keyframes heartBeat { 0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); } }
+        .anim-heartbeat { animation: heartBeat 0.4s var(--ease); }
+    </style>
+</head>
+<body>
+
+    <nav class="nav-header">
+        <a href="index.html" class="back-home-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回大厅
+        </a>
+        <h1 style="margin:0; font-size:var(--font-lg);">匿名共鸣墙</h1>
+    </nav>
+
+    <div class="wall-container page-enter" id="wallContainer">
+        <div class="notice-bar">💡 你的温暖心声，有机会在拜耳线下快闪展中匿名展示</div>
+        <!-- 身份提示条 -->
+        <div class="identity-bar" id="identityBar" style="display:none;">
+            <span>🕵️ 你的匿名昵称：<span class="identity-bar__nickname" id="identityNickname"></span></span>
+            <span class="identity-bar__hint">点击可换一个</span>
+        </div>
+        <!-- 卡片将由JS渲染 -->
+    </div>
+
+    <footer class="publisher">
+        <div class="publisher-inner">
+            <div class="tag-selector" id="tagSelector">
+                <div class="tag-chip selected" data-tag="#求安慰">#求安慰</div>
+                <div class="tag-chip" data-tag="#分享经验">#分享经验</div>
+                <div class="tag-chip" data-tag="#有点困惑">#有点困惑</div>
+                <div class="tag-chip" data-tag="#日常吐槽">#日常吐槽</div>
+            </div>
+            <div class="input-row">
+                <textarea class="input-field" id="postInput" placeholder="写下你想说的一切，这里是安全的树洞…"></textarea>
+                <button class="submit-btn" id="submitBtn" title="发送心声">✈️</button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 底部导航栏 -->
+    <nav class="tab-bar">
+        <a href="index.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <span class="tab-label text-xs">首页</span>
+        </a>
+        <a href="dairy.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <span class="tab-label text-xs">日记</span>
+        </a>
+        <a href="test.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="tab-label text-xs">自测</span>
+        </a>
+        <a href="know.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            <span class="tab-label text-xs">知识</span>
+        </a>
+        <a href="profile.html" class="tab-item flex-1 flex flex-col items-center gap-1 p-2">
+            <svg class="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span class="tab-label text-xs">我的</span>
+        </a>
+    </nav>
+
+    <!-- ========== 首次用户引导弹窗 ========== -->
+    <div class="onboarding-overlay" id="onboardingOverlay" style="display:none;">
+        <div class="onboarding-card">
+            <div class="onboarding-card__icon">🤗</div>
+            <div class="onboarding-card__title">欢迎来到匿名共鸣墙</div>
+            <div class="onboarding-card__desc">
+                这是一个安全的树洞，你可以匿名分享任何心情与故事。<br>
+                你已自动获得一个随机昵称：
+            </div>
+            <div class="onboarding-card__nickname" id="onboardingNickname">
+                🐾 <span id="onboardingNameText"></span>
+                <span class="refresh-icon" id="refreshNickBtn" title="换一个昵称">🔄</span>
+            </div>
+            <button class="btn btn--primary" id="onboardingStartBtn">
+                进入共鸣墙 🚀
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 主题初始化
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t) document.documentElement.setAttribute('data-theme', t);
+        })();
+
+        // --- 数据与状态 ---
+        const ANIMALS = ['小鲸鱼', '软萌兔', '北极熊', '长颈鹿', '小松鼠', '考拉', '企鹅'];
+        const WALL_VISITED_KEY = 'wall_visited';
+
+        function generateNickname() {
+            return ANIMALS[Math.floor(Math.random() * ANIMALS.length)] + Math.floor(Math.random() * 900 + 100);
+        }
+
+        let myNickname = sessionStorage.getItem('wall_nickname') || generateNickname();
+        sessionStorage.setItem('wall_nickname', myNickname);
+
+        const mockData = [
+            { id: 'sys_1', nickname: '坚韧的猫77', content: '每次痛到只能在床上蜷缩，还要强撑着上课，那种感觉太无助了……', tags: ['#求安慰'], isWarmMoment: false, reactions: { like: 24, hug: 18, handshake: 5 }},
+            { id: 'sys_2', nickname: '飞翔的海鸥22', content: '终于鼓起勇气在课上举手请假去了医务室，老师很理解地给我倒了热水，世界还是有温暖的！', tags: ['#分享经验'], isWarmMoment: true, reactions: { like: 56, hug: 32, handshake: 12 }},
+            { id: 'sys_3', nickname: '害羞的鹿55', content: '到底该怎么跟男朋友解释真的很痛，不是矫情啊...', tags: ['#有点困惑'], isWarmMoment: false, reactions: { like: 12, hug: 5, handshake: 20 }}
+        ];
+
+        let localPosts = JSON.parse(localStorage.getItem('wall_posts')) || [];
+        let myInteractions = JSON.parse(localStorage.getItem('wall_interactions')) || {};
+
+        // --- 首次用户引导逻辑 ---
+        function checkOnboarding() {
+            var visited = localStorage.getItem(WALL_VISITED_KEY);
+            if (!visited) {
+                // 首次访问，显示引导
+                document.getElementById('onboardingOverlay').style.display = 'flex';
+                document.getElementById('onboardingNameText').textContent = myNickname;
+                // 禁用底部输入栏（引导期间）
+                document.getElementById('postInput').disabled = true;
+                document.getElementById('submitBtn').disabled = true;
+            } else {
+                // 老用户，显示身份提示条
+                showIdentityBar();
+            }
+        }
+
+        function showIdentityBar() {
+            var bar = document.getElementById('identityBar');
+            bar.style.display = 'flex';
+            document.getElementById('identityNickname').textContent = myNickname;
+        }
+
+        // 引导弹窗：换昵称
+        document.getElementById('refreshNickBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            myNickname = generateNickname();
+            sessionStorage.setItem('wall_nickname', myNickname);
+            document.getElementById('onboardingNameText').textContent = myNickname;
+        });
+
+        // 引导弹窗：确认进入
+        document.getElementById('onboardingStartBtn').addEventListener('click', function() {
+            localStorage.setItem(WALL_VISITED_KEY, '1');
+            document.getElementById('onboardingOverlay').style.display = 'none';
+            document.getElementById('postInput').disabled = false;
+            document.getElementById('submitBtn').disabled = false;
+            showIdentityBar();
+            // 聚焦输入框
+            setTimeout(function() {
+                document.getElementById('postInput').focus();
+            }, 400);
+        });
+
+        // --- 渲染逻辑 ---
+        function renderCards(data, isLocal) {
+            if (isLocal === undefined) isLocal = data.length > 0;
+            var container = document.getElementById('wallContainer');
+            var fragment = document.createDocumentFragment();
+
+            var combinedData = isLocal ? [].concat(data).concat(mockData) : [].concat(data);
+            // 按ID排序
+            combinedData.sort(function(a, b) { return b.id.localeCompare(a.id); });
+
+            // 先检查是否没有任何内容（包括mockData）
+            var hasContent = combinedData.length > 0;
+
+            combinedData.forEach(function(post) {
+                var card = document.createElement('div');
+                card.className = 'thought-card';
+                if (post.nickname === myNickname) card.classList.add('my-post');
+                card.dataset.id = post.id;
+
+                var isActiveLike = myInteractions[post.id] && myInteractions[post.id].indexOf('like') !== -1;
+                var isActiveHug = myInteractions[post.id] && myInteractions[post.id].indexOf('hug') !== -1;
+                var isActiveHand = myInteractions[post.id] && myInteractions[post.id].indexOf('handshake') !== -1;
+
+                var isMe = post.nickname === myNickname;
+                var nicknameClass = isMe ? 'nickname is-me' : 'nickname';
+
+                card.innerHTML =
+                    '<button class="report-btn" onclick="handleReport(\'' + post.id + '\')">⚠️举报</button>' +
+                    '<div class="card-header">' +
+                        '<span class="' + nicknameClass + '">' + post.nickname + '</span>' +
+                        (post.isWarmMoment ? '<span class="warm-badge">暖心瞬间 ✨</span>' : '') +
+                        '<span class="card-time">' + (post.id.indexOf('usr_') === 0 ? '刚刚' : '2小时前') + '</span>' +
+                    '</div>' +
+                    '<div class="card-body">' + post.content + '</div>' +
+                    '<div class="card-tags">' + post.tags.map(function(t) { return '<span class="tag">' + t + '</span>'; }).join('') + '</div>' +
+                    '<div class="card-footer">' +
+                        '<button class="reaction-btn ' + (isActiveLike ? 'active' : '') + '" data-type="like">' +
+                            '<span class="icon">👍</span> <span class="count">' + (post.reactions.like + (isActiveLike ? 1 : 0)) + '</span>' +
+                        '</button>' +
+                        '<button class="reaction-btn ' + (isActiveHug ? 'active' : '') + '" data-type="hug">' +
+                            '<span class="icon">🤗</span> <span class="count">' + (post.reactions.hug + (isActiveHug ? 1 : 0)) + '</span>' +
+                        '</button>' +
+                        '<button class="reaction-btn ' + (isActiveHand ? 'active' : '') + '" data-type="handshake">' +
+                            '<span class="icon">🤝</span> <span class="count">' + (post.reactions.handshake + (isActiveHand ? 1 : 0)) + '</span>' +
+                        '</button>' +
+                    '</div>';
+                fragment.appendChild(card);
+            });
+
+            // 保留 notice-bar 和 identity-bar
+            var noticeBar = container.querySelector('.notice-bar');
+            var identityBar = container.querySelector('.identity-bar');
+            container.innerHTML = '';
+            if (noticeBar) container.appendChild(noticeBar);
+            if (identityBar) container.appendChild(identityBar);
+            container.appendChild(fragment);
+
+            // 如果没有内容，显示空状态提示
+            if (!hasContent) {
+                var emptyEl = document.createElement('div');
+                emptyEl.className = 'empty-hint';
+                emptyEl.innerHTML = '<span class="empty-hint__icon">🕊️</span>做第一个留下心声的人吧～<br>点击下方输入框开始分享';
+                container.appendChild(emptyEl);
+            }
+        }
+
+        // --- 交互逻辑 ---
+
+        // 点赞互动
+        document.getElementById('wallContainer').addEventListener('click', function(e) {
+            var btn = e.target.closest('.reaction-btn');
+            if (!btn) return;
+
+            var card = btn.closest('.thought-card');
+            var postId = card.dataset.id;
+            var type = btn.dataset.type;
+            var countSpan = btn.querySelector('.count');
+            var iconSpan = btn.querySelector('.icon');
+
+            if (!myInteractions[postId]) myInteractions[postId] = [];
+
+            if (btn.classList.contains('active')) {
+                // 取消互动
+                btn.classList.remove('active');
+                countSpan.textContent = parseInt(countSpan.textContent) - 1;
+                myInteractions[postId] = myInteractions[postId].filter(function(t) { return t !== type; });
+            } else {
+                // 增加互动
+                btn.classList.add('active');
+                iconSpan.classList.add('anim-heartbeat');
+                setTimeout(function() { iconSpan.classList.remove('anim-heartbeat'); }, 400);
+                countSpan.textContent = parseInt(countSpan.textContent) + 1;
+                myInteractions[postId].push(type);
+            }
+            localStorage.setItem('wall_interactions', JSON.stringify(myInteractions));
+        });
+
+        // 身份提示条点击换昵称
+        document.getElementById('identityBar').addEventListener('click', function() {
+            myNickname = generateNickname();
+            sessionStorage.setItem('wall_nickname', myNickname);
+            document.getElementById('identityNickname').textContent = myNickname;
+            // 重新渲染以更新卡片上的昵称标记
+            renderCards(localPosts, localPosts.length > 0);
+            // Toast 提示
+            showToast('匿名昵称已更换为：' + myNickname);
+        });
+
+        // 发布心声
+        function publishPost() {
+            var input = document.getElementById('postInput');
+            var content = input.value.trim();
+            if (!content) return;
+
+            var selectedChip = document.querySelector('.tag-chip.selected');
+            var selectedTag = selectedChip ? selectedChip.dataset.tag : '#日常吐槽';
+
+            var newPost = {
+                id: 'usr_' + Date.now(),
+                nickname: myNickname,
+                content: content,
+                tags: [selectedTag],
+                isWarmMoment: false,
+                reactions: { like: 0, hug: 0, handshake: 0 }
+            };
+
+            localPosts.unshift(newPost);
+            localStorage.setItem('wall_posts', JSON.stringify(localPosts));
+
+            input.value = '';
+            renderCards(localPosts, localPosts.length > 0);
+
+            showToast('心声已发送 💖');
+        }
+
+        document.getElementById('submitBtn').addEventListener('click', publishPost);
+
+        // Enter 键提交（Shift+Enter 换行）
+        document.getElementById('postInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                publishPost();
+            }
+        });
+
+        // 标签选择
+        document.getElementById('tagSelector').addEventListener('click', function(e) {
+            if (e.target.classList.contains('tag-chip')) {
+                this.querySelectorAll('.tag-chip').forEach(function(c) { c.classList.remove('selected'); });
+                e.target.classList.add('selected');
+            }
+        });
+
+        // 举报逻辑
+        function handleReport(id) {
+            if (confirm('确定要举报该内容吗？我们将暂时隐藏该内容并进行人工审核。')) {
+                var card = document.querySelector('.thought-card[data-id="' + id + '"]');
+                if (card) card.style.opacity = '0.3';
+                showToast('感谢反馈，我们会尽快审核');
+            }
+        }
+
+        // Toast 通知
+        function showToast(msg) {
+            var existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+
+            var toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+
+            setTimeout(function() {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s var(--ease)';
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 2000);
+        }
+
+        // 初始化
+        renderCards(localPosts, localPosts.length > 0);
+        checkOnboarding();
+    </script>
+
+</body>
+</html>
