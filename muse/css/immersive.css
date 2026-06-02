@@ -1,0 +1,78 @@
+/* ================= 2. 沉浸界面样式 ================= */
+#immersive-bg-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -5; pointer-events: none; }
+
+.imm-wrapper {
+    position: relative; z-index: 10; width: 100%; height: 100%;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: clamp(20px, 3vw, 40px); pointer-events: none;
+    background: transparent;  /* 🩹 v2.8.8: 确保不阻塞 backdrop-filter */
+    isolation: auto;          /* 🩹 v2.8.8: 避免创建独立隔离层阻断模糊 */
+}
+.imm-wrapper * { pointer-events: auto; }
+
+.imm-topbar { display: flex; justify-content: space-between; align-items: flex-start; }
+
+.imm-track-card {
+    display: flex; align-items: center; gap: 20px;
+    background: var(--glass-bg); backdrop-filter: blur(25px) saturate(180%); -webkit-backdrop-filter: blur(25px) saturate(180%);
+    padding: 15px 24px; border-radius: 24px; border: var(--glass-border); max-width: 500px;
+}
+.imm-track-card.no-art { gap: 0; }
+.imm-track-card.no-art .imm-album-art { display: none; }
+.imm-album-art { width: 70px; height: 70px; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); flex-shrink: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+.imm-album-art img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--curve-smooth); }
+.imm-track-card:hover .imm-album-art img { transform: scale(1.1); }
+
+.imm-header-actions { display: flex; gap: 12px; }
+.imm-icon-btn {
+    width: 50px; height: 50px; border-radius: 16px; background: rgba(255,255,255,0.06); backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-main);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s var(--curve-smooth); font-size: 18px;
+}
+.imm-icon-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-2px); border-color: var(--primary); color: var(--primary); }
+
+.imm-lyrics-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 90%; max-width: 1200px; text-align: center; z-index: 5; transition: opacity 0.5s; pointer-events: none;
+}
+.imm-lyrics-center.hidden { opacity: 0; }
+.imm-subtitle { text-shadow: 0 4px 20px rgba(0,0,0,0.8), 0 0 30px var(--primary-glow); line-height: 1.4; }
+.imm-subtitle-line { 
+    font-size: clamp(28px, 4vw, 46px); 
+    font-weight: 800; 
+    margin-bottom: 12px; 
+    min-height: 1.4em; 
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    will-change: opacity, transform;
+    opacity: 1;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+.imm-subtitle-line.next { 
+    font-size: clamp(20px, 2.5vw, 28px); 
+    font-weight: 600; 
+    color: rgba(255,255,255,0.6); 
+    margin-top: 8px; 
+    min-height: 1.4em; 
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    will-change: opacity, transform;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+/* 🚀 v2.8.6: 翻译行自动更高透明度由 JS 动态设置（0.85），CSS 不再复制过渡 */
+
+.imm-bottom {
+    background: var(--glass-bg); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border-radius: 28px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    padding: 24px 40px; max-width: 850px; margin: 0 auto; width: 100%; display: flex; align-items: center; gap: 30px;
+}
+
+.imm-exit-hint {
+    position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 20;
+    font-size: 20px; color: rgba(255,255,255,0.3); cursor: pointer; transition: all 0.3s;
+    animation: bounceArrow 2s infinite; pointer-events: auto;
+}
+.imm-exit-hint:hover { color: var(--primary); transform: translateX(-50%) scale(1.2); }
+@keyframes bounceArrow { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(-6px)} }

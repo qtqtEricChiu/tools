@@ -3,41 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MBolka Player - Ultimate Nexus v2.6.0</title>
+    <title>MBolka Player - Ultimate Nexus v2.8.8</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
-    <link rel="stylesheet" href="css/style.css">
-    <!-- PWA Manifest (动态注入) -->
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/base-layout.css">
+    <link rel="stylesheet" href="css/immersive.css">
+    <link rel="stylesheet" href="css/modals.css">
+    <link rel="stylesheet" href="css/cover-lib.css">
+    <link rel="stylesheet" href="css/components.css">
+    <!-- PWA Manifest (静态) 🚀 v2.7 -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Service Worker for PWA -->
     <script>
-        // 动态注入 Manifest
-        const manifest = {
-            name: 'MBolka Player',
-            short_name: 'MBolka',
-            description: 'Ultimate Local Music Player',
-            start_url: '.',
-            display: 'standalone',
-            background_color: '#0a0a1a',
-            theme_color: '#9ac8e2',
-            icons: [{
-                src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192"><rect width="192" height="192" rx="32" fill="#0a0a1a"/><text x="96" y="120" font-size="96" text-anchor="middle" fill="#9ac8e2">♪</text></svg>'),
-                sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable'
-            }]
-        };
-        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-        const manifestURL = URL.createObjectURL(blob);
-        const link = document.createElement('link');
-        link.rel = 'manifest'; link.href = manifestURL;
-        document.head.appendChild(link);
-
-        // Service Worker for PWA
         if ('serviceWorker' in navigator) {
             const swCode = `
                 self.addEventListener('install', e => self.skipWaiting());
                 self.addEventListener('activate', e => e.waitUntil(clients.claim()));
                 self.addEventListener('fetch', e => {
-                    e.respondWith(fetch(e.request).catch(() => new Response('Offline')));
+                    e.respondWith(fetch(e.request).catch(() => new Response('', {status: 503, statusText: 'Offline'})));
                 });
             `;
             const swBlob = new Blob([swCode], {type: 'application/javascript'});
@@ -64,7 +50,6 @@
                     <button class="btn-glass focusable" id="btnToggleLrc"><i>📝</i> 歌词</button>
                     <button class="btn-glass focusable" id="btnCoverLibrary" title="曲库"><i>🖼️</i> 曲库</button>
                     <button class="btn-glass focusable" id="btnSettings"><i>⚙️</i> 设置</button>
-                    <button class="btn-glass focusable" id="btnLoadFolder" style="background: var(--primary); color: var(--text-on-primary); border:none;"><i>📁</i> 载入音乐</button>
                     <input type="file" id="folderInput" webkitdirectory directory multiple>
                 </div>
             </div>
@@ -76,7 +61,7 @@
                 <div class="empty-state" id="emptyState">
                     <div class="icon-wrap">🎵</div>
                     <p>拖拽音乐文件夹到此处</p>
-                    <p class="sub">或点击右上角"载入音乐"按钮</p>
+                    <p class="sub">或按 Ctrl+O 打开文件夹 / 前往设置页载入</p>
                     <p class="sub" style="font-size:11px;">支持 MP3 / FLAC / WAV / M4A / OGG + LRC / CUE</p>
                 </div>
 
@@ -253,26 +238,46 @@
     <div class="modal-overlay" id="settingsModal">
         <div class="modal-content" style="max-height:90vh;">
             <div class="modal-header">
-                <h2 style="font-size: 20px;">系统与操作设置</h2>
+                <h2 style="font-size: 20px;">⚙️ 设置</h2>
                 <button class="btn-glass focusable" id="btnCloseSettings" style="padding: 6px 12px;">关闭 (B/Esc)</button>
             </div>
+            <!-- 🚀 v2.8: 载入音乐移到设置页最顶端 -->
+            <div class="drawer-box" style="background:rgba(154,200,226,0.08);border-color:rgba(154,200,226,0.2);">
+                <div class="drawer-title">📁 载入音乐 (Ctrl+O)</div>
+                <button class="btn-glass focusable" id="btnLoadFolder" style="width:100%;justify-content:center;background:var(--primary);color:var(--text-on-primary);border:none;padding:14px;">📁 打开文件夹</button>
+                <p style="font-size:11px;color:var(--text-sub);text-align:center;margin:8px 0 0;">支持 MP3 / FLAC / WAV / M4A / OGG + LRC / CUE</p>
+            </div>
+            <!-- 🚀 v2.8: 专辑封面取色模式作为核心视觉功能位 -->
+            <div class="drawer-box" style="background:rgba(154,200,226,0.06);border-color:rgba(154,200,226,0.15);">
+                <div class="drawer-title">🎨 封面取色</div>
+                <p style="font-size:12px;color:var(--text-sub);margin-bottom:12px;">自动提取专辑封面颜色作为主题色</p>
+                <button class="btn-glass focusable" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 8px;">🎨 <span id="colorModeLabel">开启取色</span> (Y / C)</button>
+                <div id="colorModePreview" style="display:none;height:8px;border-radius:4px;margin-top:8px;transition:background 0.5s;"></div>
+            </div>
             <div class="drawer-box">
-                <div class="drawer-title">🎨 预设主题色</div>
+                <div class="drawer-title">🎨 主题色</div>
                 <div class="theme-preset-grid" id="themePresetGrid"></div>
+                <p style="font-size:11px;color:var(--text-sub);margin-top:8px;">提示：取色模式开启时，专辑封面颜色自动覆盖预设主题</p>
+            </div>
+            <!-- 🚀 v2.8.1: 自定义背景整合到显示区域 -->
+            <div class="drawer-box">
+                <div class="drawer-title">🖼️ 背景图片</div>
+                <button class="btn-glass focusable" id="btnSetBg" style="width: 100%; justify-content: center; margin-bottom: 10px;">🖼️ 上传图片</button>
+                <button class="btn-glass focusable" id="btnClearBg" style="width: 100%; justify-content: center; color: #ff6b6b; border-color: rgba(255,107,107,0.3);">🔄 恢复默认</button>
+                <input type="file" id="bgInput" accept="image/*">
             </div>
             <div class="drawer-box">
-                <div class="drawer-title">🎛 十段均衡器 (EQ)</div>
-                <div id="eqPanelContainer"></div>
-            </div>
-            <div class="drawer-box">
-                <div class="drawer-title">UI 视觉引擎</div>
-                <button class="btn-glass focusable" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">开启取色模式 (Y / C)</button>
+                <div class="drawer-title">🌗 显示调节</div>
                 <button class="btn-glass focusable" id="btnToggleDarkMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">🌙 深色模式</button>
                 <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px;">背景模糊强度: <span id="blurVal">40px</span></div>
                 <input type="range" class="focusable" id="blurSlider" min="0" max="100" value="40">
             </div>
             <div class="drawer-box">
-                <div class="drawer-title">📝 歌词显示调节</div>
+                <div class="drawer-title">🎛 均衡器</div>
+                <div id="eqPanelContainer"></div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">📝 歌词显示</div>
                 <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 4px;">字号: <span id="lrcFontSizeVal">18px</span></div>
                 <input type="range" class="focusable" id="lrcFontSizeSlider" min="12" max="32" value="18" style="margin-bottom:12px;">
                 <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 4px;">行距: <span id="lrcLineHeightVal">2.2</span></div>
@@ -281,6 +286,12 @@
                 <div style="display:flex;gap:8px;">
                     <button class="btn-glass focusable lrc-align-btn active" data-align="center" style="flex:1;justify-content:center;">居中</button>
                     <button class="btn-glass focusable lrc-align-btn" data-align="left" style="flex:1;justify-content:center;">左对齐</button>
+                </div>
+                <!-- 🚀 v2.8.5: 歌词垂直对齐模式 -->
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px; margin-top: 12px;">垂直对齐:</div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-glass focusable active" id="btnLrcAlignCenter" style="flex:1;justify-content:center;">居中</button>
+                    <button class="btn-glass focusable" id="btnLrcAlignTop" style="flex:1;justify-content:center;">偏上 (QQ音乐)</button>
                 </div>
                 <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                     <span style="font-size:13px;color:var(--text-sub);">⏱ 歌词偏移:</span>
@@ -292,7 +303,7 @@
                 </div>
             </div>
             <div class="drawer-box">
-                <div class="drawer-title">🌙 睡眠定时器</div>
+                <div class="drawer-title">⏰ 睡眠定时 (Alt+T)</div>
                 <div class="sleep-timer-btns">
                     <button class="btn-glass" id="btnSleep15">15分钟</button>
                     <button class="btn-glass" id="btnSleep30">30分钟</button>
@@ -300,37 +311,75 @@
                     <button class="btn-glass" id="btnSleepCancel">取消</button>
                 </div>
             </div>
-            <div class="drawer-box">
-                <div class="drawer-title">🖼️ 画中画 & 功能</div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button class="btn-glass focusable" id="btnTogglePip" style="flex:1;justify-content:center;">📺 画中画 (Q)</button>
-                    <button class="btn-glass focusable" id="btnShowStats" style="flex:1;justify-content:center;">📊 统计 (T)</button>
+            <!-- 🚀 v2.8.2: 节能模式板块整合 -->
+            <div class="drawer-box" style="background:rgba(255,193,7,0.06);border-color:rgba(255,193,7,0.15);">
+                <div class="drawer-title">⚡ 节能模式</div>
+                
+                <!-- 一键节能：去除所有可视化动效，保持正常亮度 -->
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+                    <div>
+                        <span style="font-size:14px;color:var(--text-main);">🔋 一键节能</span>
+                        <p style="font-size:11px;color:var(--text-sub);margin:2px 0 0;">去除所有动效，保持正常亮度</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="oneClickEnergyToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <!-- 画面节能：仅将动画降至30帧 -->
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+                    <div>
+                        <span style="font-size:14px;color:var(--text-main);">🎬 画面节能</span>
+                        <p style="font-size:11px;color:var(--text-sub);margin:2px 0 0;">动画降至30帧，保留视觉效果</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="frameEnergyToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <!-- 临时节能：启动画中画时自动优化 -->
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);">
+                    <div>
+                        <span style="font-size:14px;color:var(--text-main);">📺 临时节能</span>
+                        <p style="font-size:11px;color:var(--text-sub);margin:2px 0 0;">启动画中画时自动优化主界面</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="pipEnergyToggle" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
             </div>
+            <!-- 📊 播放统计（单列） -->
             <div class="drawer-box">
-                <div class="drawer-title">📋 调试与日志</div>
-                <button class="btn-glass focusable" id="btnExportLogs" style="width:100%;justify-content:center;">📋 导出调试日志</button>
+                <div class="drawer-title">📊 播放统计 (T)</div>
+                <button class="btn-glass focusable" id="btnShowStats" style="width:100%;justify-content:center;">📊 查看统计</button>
             </div>
             <div class="drawer-box">
-                <div class="drawer-title">自定义背景 (优先)</div>
-                <button class="btn-glass focusable" id="btnSetBg" style="width: 100%; justify-content: center; margin-bottom: 10px;">上传本地图片</button>
-                <button class="btn-glass focusable" id="btnClearBg" style="width: 100%; justify-content: center; color: #ff6b6b; border-color: rgba(255,107,107,0.3);">恢复默认逻辑</button>
-                <input type="file" id="bgInput" accept="image/*">
+                <div class="drawer-title">📋 调试工具</div>
+                <button class="btn-glass focusable" id="btnExportLogs" style="width:100%;justify-content:center;">📋 导出日志</button>
             </div>
             <div class="drawer-box">
-                <div class="drawer-title">全域操作指南 (键盘 & 手柄)</div>
+                <div class="drawer-title">⌨️ 快捷键指南</div>
                 <div class="hotkey-grid">
                     <span><kbd>Space</kbd> / <kbd class="pad">A键</kbd></span> <span>播放 / 暂停 / 确认选定项</span>
                     <span><kbd>← / →</kbd> / <kbd class="pad">LB / RB</kbd></span> <span>上一曲 / 下一曲</span>
                     <span><kbd>↑ / ↓</kbd> / <kbd class="pad">LT / RT</kbd></span> <span>音量加减</span>
                     <span><kbd>J / K</kbd> / <kbd class="pad">十字 左/右</kbd></span> <span>快退 / 快进 10秒</span>
+                    <span><kbd>Ctrl+O</kbd></span> <span><b>打开文件夹载入音乐</b></span>
                     <span><kbd>I</kbd> / <kbd class="pad">十字 下</kbd></span> <span><b>切换沉浸舱模式</b></span>
-                    <span><kbd>S / M / R</kbd> / <kbd class="pad">X键</kbd></span> <span>三态切换: 顺序 → 随机 → 单曲循环</span>
-                    <span><kbd>C</kbd> / <kbd class="pad">Y键</kbd></span> <span>开关取色模式</span>
+                    <span><kbd>S / M / R</kbd> / <kbd class="pad">Y键</kbd></span> <span>三态切换: 顺序 → 随机 → 单曲循环</span>
+                    <span><kbd>C</kbd></span> <span>开关专辑封面取色模式</span>
+                    <span><kbd>U / F</kbd> / <kbd class="pad">X键</kbd></span> <span><b>收藏/取消收藏当前歌曲</b></span>
+                    <span><kbd>Shift+F</kbd> / <kbd class="pad">View</kbd></span> <span>全屏开关</span>
+                    <span><kbd>D</kbd></span> <span>深色/护眼模式</span>
+                    <span><kbd>/</kbd></span> <span><b>聚焦搜索播放列表</b></span>
                     <span><kbd>L / P</kbd> / <kbd class="pad">十字 上</kbd></span> <span>开关歌词 / 播放列表</span>
+                    <span><kbd>Alt+T</kbd></span> <span><b>睡眠定时器快速菜单</b></span>
                     <span><kbd>WASD</kbd> / <kbd class="pad">左摇杆</kbd></span> <span><b>UI 焦点导航 (脱离鼠标)</b></span>
                     <span><kbd>Esc</kbd> / <kbd class="pad">B键</kbd></span> <span>关闭弹窗 / 退出沉浸</span>
-                    <span><kbd>F</kbd> / <kbd class="pad">View</kbd></span> <span>全屏开关</span>
+                    <span><kbd>Shift+Esc</kbd> / <kbd class="pad">长按B键</kbd></span> <span><b>一键关闭所有弹窗回主页</b></span>
                     <span><kbd>T</kbd></span> <span>统计面板</span>
                     <span><kbd>G</kbd></span> <span>曲库</span>
                     <span><kbd>Q</kbd></span> <span>画中画</span>
@@ -338,7 +387,7 @@
                 </div>
             </div>
             <div style="text-align: center; color: var(--text-sub); font-size: 12px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); margin-top: 20px;">
-                ©MocaBolka 2026 v2.5.0<br/>co-created with DeepSeek@Tencent Yuanbao, Gemini 3.1 Pro Preview, CodeBuddy
+                ©MocaBolka 2026 v2.8.9<br/>co-created with DeepSeek@Tencent Yuanbao, Gemini 3.1 Pro Preview, CodeBuddy, QClaw
             </div>
         </div>
     </div>
@@ -369,7 +418,10 @@
                     <span><kbd>↑ / ↓</kbd> / <kbd class="pad">LT / RT</kbd></span><span>音量加减</span>
                     <span><kbd>J / K</kbd> / <kbd class="pad">十字 左/右</kbd></span><span>快退 / 快进 10秒</span>
                     <span><kbd>S / M / R</kbd> / <kbd class="pad">X键</kbd></span><span>播放模式: 顺序→随机→单曲循环</span>
-                    <span><kbd>A+B</kbd> (长按播放键)</span><span>A-B段落重复</span>
+                    <span><kbd>U / F</kbd></span><span><b>收藏/取消收藏当前歌曲</b></span>
+                    <span><kbd>Ctrl+O</kbd></span><span><b>打开文件夹载入音乐</b></span>
+                    <span><kbd>/</kbd></span><span><b>聚焦搜索播放列表</b></span>
+                    <span><kbd>Alt+T</kbd></span><span><b>睡眠定时器快速菜单</b></span>
                 </div>
             </div>
             <div class="drawer-box">
@@ -377,16 +429,31 @@
                 <div class="hotkey-grid">
                     <span><kbd>I</kbd> / <kbd class="pad">十字 下</kbd></span><span>切换沉浸模式</span>
                     <span><kbd>Esc</kbd> / <kbd class="pad">B键</kbd></span><span>关闭弹窗 / 退出沉浸</span>
-                    <span><kbd>F</kbd> / <kbd class="pad">View</kbd></span><span>全屏开关</span>
+                    <span><kbd>Shift+Esc</kbd> / <kbd class="pad">长按B键</kbd></span><span><b>一键关闭所有弹窗</b></span>
+                    <span><kbd>Shift+F</kbd> / <kbd class="pad">View</kbd></span><span>全屏开关</span>
                     <span><kbd>L</kbd></span><span>开关歌词面板</span>
                     <span><kbd>P</kbd> / <kbd class="pad">十字 上</kbd></span><span>打开播放列表</span>
-                    <span><kbd>C</kbd> / <kbd class="pad">Y键</kbd></span><span>取色模式切换</span>
+                    <span><kbd>C</kbd> / <kbd class="pad">Y键</kbd></span><span>专辑封面取色模式</span>
                     <span><kbd>D</kbd></span><span>深色/护眼模式</span>
                     <span><kbd>T</kbd></span><span>统计面板</span>
                     <span><kbd>G</kbd></span><span>曲库</span>
                     <span><kbd>Q</kbd></span><span>画中画</span>
                     <span><kbd>?</kbd></span><span>快捷键帮助面板</span>
                     <span><kbd>WASD</kbd> / <kbd class="pad">左摇杆</kbd></span><span>UI焦点导航</span>
+                </div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🎮 手柄操作指引 (接入时按钮会出现ⓐⓑⓧⓨ徽章)</div>
+                <div class="hotkey-grid">
+                    <span><kbd class="pad">A键</kbd></span><span>播放/暂停 / 确认焦点项</span>
+                    <span><kbd class="pad">B键</kbd></span><span>关闭弹窗 / 退出沉浸</span>
+                    <span><kbd class="pad">X键</kbd></span><span>切换播放模式</span>
+                    <span><kbd class="pad">Y键</kbd></span><span>取色模式开关</span>
+                    <span><kbd class="pad">LB / RB</kbd></span><span>上一曲 / 下一曲</span>
+                    <span><kbd class="pad">LT / RT</kbd></span><span>音量加减</span>
+                    <span><kbd class="pad">十字键</kbd></span><span>2D 焦点导航 / 快进快退</span>
+                    <span><kbd class="pad">左摇杆</kbd></span><span>2D 空间焦点导航</span>
+                    <span><kbd class="pad">View键</kbd></span><span>全屏开关</span>
                 </div>
             </div>
             <div class="drawer-box">

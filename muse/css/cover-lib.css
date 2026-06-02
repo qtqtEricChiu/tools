@@ -1,0 +1,98 @@
+/* ================= 5. 封面库独立面板 (v2.2 增强) ================= */
+.cover-library-panel {
+    background: rgba(20,25,40,0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 28px;
+    padding: 24px; width: 750px; max-width: 95vw; max-height: 88vh; overflow-y: auto;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+}
+.cover-lib-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+.cover-lib-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.cover-lib-tab {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--text-sub);
+    padding: 8px 18px; border-radius: 12px; cursor: pointer; font-size: 13px; font-weight: 500;
+    transition: all 0.3s;
+}
+.cover-lib-tab:hover { border-color: var(--primary); color: var(--text-main); }
+.cover-lib-tab.active { background: var(--primary); color: var(--text-on-primary); border-color: var(--primary); font-weight: 600; }
+.cover-lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+.cover-lib-card {
+    background: rgba(255,255,255,0.03); border-radius: 18px; padding: 14px;
+    border: 1px solid transparent; cursor: pointer; transition: all 0.35s var(--curve-spring);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    position: relative; overflow: hidden;
+}
+.cover-lib-card:hover {
+    background: rgba(255,255,255,0.08); border-color: var(--primary);
+    transform: translateY(-4px); box-shadow: 0 12px 28px rgba(0,0,0,0.4);
+}
+.cover-lib-card .art-wrap {
+    width: 120px; height: 120px; border-radius: 14px; overflow: hidden; position: relative;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35); flex-shrink: 0;
+}
+.cover-lib-card .art-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.6s var(--curve-smooth); }
+.cover-lib-card:hover .art-wrap img { transform: scale(1.08); }
+.cover-lib-card .vinyl-slip {
+    position: absolute; top: 4px; left: 50%; transform: translateX(-50%) translateX(100px);
+    width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 30%, #111 50%, #333 70%, #1a1a1a 100%);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: -1; opacity: 0;
+    transition: all 0.5s var(--curve-spring);
+    display: flex; align-items: center; justify-content: center;
+}
+.cover-lib-card .vinyl-slip::after {
+    content: ''; width: 22px; height: 22px; border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, #ccc 40%, #e8b4b8 60%, #999 100%);
+    box-shadow: 0 0 6px rgba(0,0,0,0.3);
+}
+.cover-lib-card:hover .vinyl-slip {
+    transform: translateX(-50%) translateX(0);
+    opacity: 1;
+}
+.cover-lib-card .album-name { font-size: 13px; font-weight: 600; text-align: center; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-lib-card .album-meta { font-size: 11px; color: var(--text-sub); text-align: center; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-lib-card .song-count-badge {
+    position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.8); color: #fff;
+    font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; z-index: 2;
+}
+.cover-lib-card .play-all-btn {
+    display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+    align-items: center; justify-content: center; font-size: 32px; color: #fff;
+    border-radius: 14px; cursor: pointer; z-index: 3;
+}
+.cover-lib-card .art-wrap:hover .play-all-btn { display: flex; }
+.cover-lib-card.artist-card .art-wrap { border-radius: 50%; }
+.cover-lib-card.artist-card .vinyl-slip { display: none; }
+
+/* 专辑详情面板 */
+.album-detail-panel {
+    background: rgba(20,25,40,0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 28px;
+    padding: 28px; width: 700px; max-width: 95vw; max-height: 88vh; overflow-y: auto;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+    /* 🚀 v2.8: 弹入动画同步 modal-content */
+    transform: scale(0.9); opacity: 0;
+    transition: transform 0.4s var(--curve-spring), opacity 0.35s var(--curve-smooth);
+    will-change: transform, opacity;
+}
+.modal-overlay.open .album-detail-panel {
+    transform: scale(1); opacity: 1;
+}
+.album-detail-header { display: flex; gap: 24px; align-items: flex-start; margin-bottom: 24px; }
+.album-detail-cover {
+    width: 200px; height: 200px; border-radius: 18px; overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.4); flex-shrink: 0; position: relative;
+}
+.album-detail-cover img { width: 100%; height: 100%; object-fit: cover; }
+.album-detail-info { flex: 1; min-width: 0; }
+.album-detail-name { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+.album-detail-artist { font-size: 16px; color: var(--primary); margin-bottom: 12px; }
+.album-detail-meta { font-size: 13px; color: var(--text-sub); margin-bottom: 16px; }
+.album-detail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.album-detail-tracks { margin-top: 16px; }
+.album-detail-track {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: rgba(255,255,255,0.03); border-radius: 10px; cursor: pointer;
+    transition: all 0.2s; margin-bottom: 6px;
+}
+.album-detail-track:hover { background: rgba(255,255,255,0.08); }
+.album-detail-track.active { background: rgba(154,200,226,0.15); border: 1px solid var(--primary); }
+.album-detail-track .track-num { width: 28px; text-align: center; font-size: 12px; color: var(--text-sub); flex-shrink: 0; }
+.album-detail-track .track-title { flex: 1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.album-detail-track .track-dur { font-size: 12px; color: var(--text-sub); flex-shrink: 0; }

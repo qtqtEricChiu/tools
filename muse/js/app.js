@@ -1,6 +1,15 @@
 /**
- * MBolka Player - Ultimate Nexus v2.6.0
+ * MBolka Player - Ultimate Nexus v2.8.9
  * Main Application Logic
+ * 
+ * v2.8.9 更新：
+ * - LRC 解析引擎完全重写：单语/双语自适应，预扫描中文计数快速判断
+ * - 修复双语歌词漏识别（pendingOriginal 已翻译时不再丢弃后续行）
+ * - 修复单语 LRC 误识别为双语（移除长度规则假阳性，isSingleLang 守卫）
+ * - 元数据行检测全面扩展（创作信息行/英文制作信息/版权行）
+ * - Crossfade 引擎重写：Web Audio API GainNode 替代 rAF 音量动画
+ * - 固定双槽位架构（永不交换），AudioContext lazy-init，精确定时斜坡
+ * - 提前 50% 预加载下一首，semaphore 防重叠，3 秒超时回退
  */
 
 // === Worker 内联定义 (Web Worker 解析元数据) ===
@@ -35,8 +44,9 @@ let musicLibrary = []; // 🚀 新增：导入的完整本地音乐库（不因�
 let lrcMap = new Map(), playHistory = [];
 let currentIndex = -1, isPlaying = false, isShuffle = false, isRepeatOne = false, isImmersiveMode = false;
 let parsedLyrics = [], isUserScrollingLyrics = false, lyricsScrollTimeout = null;
-let gamepadConnected = false, prevPadBtns = [];
+let gamepadConnected = false, prevPadBtns = [], prevPadAxes = [];
 let lyricsOffset = 0; // 歌词时间偏移(秒)
+let lyricsAlignMode = 'center'; // 🚀 v2.8.5: 歌词对齐模式 'center' | 'top'
 
 // A-B 重复
 let abMode = false, abPointA = null, abPointB = null;
@@ -80,6 +90,69 @@ let crossfadeEnabled = false;
 let crossfadeDuration = 3; // 秒
 let isFading = false; // 🚀 全局淡入淡出锁，防止 timeupdate 触发多重定时器崩溃
 
+// 🔥 v2.8.9: Crossfade 引擎全面重写 — Web Audio API GainNode 精确定时淡变
+// 固定双音频槽位（永不交换），AudioContext 工厂模式懒初始化
+let audioCtx_cf = null;          // crossfade 专用 AudioContext
+let cfSourceNodeA = null;        // MediaElementSourceNode for audioA
+let cfSourceNodeB = null;        // MediaElementSourceNode for audioB
+let cfGainNodeA = null;          // GainNode for slot A
+let cfGainNodeB = null;          // GainNode for slot B
+let cfAudioB = null;             // 备用音频槽 B
+let cfActive = 'A';              // 'A' 或 'B'，当前播放槽
+let cfPreloadTimer = null;       // 预加载计时器
+let cfRafId = null;              // 外部交叉淡变检测 rAF ID
+let cfTransitionId = 0;          // 事务 ID，防止重叠
+let cfAirLocked = false;         // 门禁锁，防止交叉淡变期间手动切歌
+
+const cfGetActiveAudio = () => cfActive === 'A' ? audio : cfAudioB;
+const cfGetPassiveAudio = () => cfActive === 'A' ? cfAudioB : audio;
+const cfGetActiveGain = () => cfActive === 'A' ? cfGainNodeA : cfGainNodeB;
+const cfGetPassiveGain = () => cfActive === 'A' ? cfGainNodeB : cfGainNodeA;
+const cfGetActiveSource = () => cfActive === 'A' ? cfSourceNodeA : cfSourceNodeB;
+const cfGetPassiveSource = () => cfActive === 'A' ? cfSourceNodeB : cfSourceNodeA;
+
+// 🔥 v2.8.9: 懒初始化 AudioContext（用户首次播放时创建，符合 Chrome 自动播放策略）
+function cfEnsureContext() {
+    if (audioCtx_cf) return true;
+    try {
+        audioCtx_cf = new (window.AudioContext || window.webkitAudioContext)();
+        if (!cfAudioB) {
+            cfAudioB = new Audio();
+            cfAudioB.crossOrigin = 'anonymous';
+            cfAudioB.preload = 'auto';
+        }
+        cfGainNodeA = audioCtx_cf.createGain();
+        cfGainNodeB = audioCtx_cf.createGain();
+        cfGainNodeA.gain.value = audio.volume;
+        cfGainNodeB.gain.value = 0;
+        cfSourceNodeA = audioCtx_cf.createMediaElementSource(audio);
+        cfSourceNodeB = audioCtx_cf.createMediaElementSource(cfAudioB);
+        cfSourceNodeA.connect(cfGainNodeA).connect(audioCtx_cf.destination);
+        cfSourceNodeB.connect(cfGainNodeB).connect(audioCtx_cf.destination);
+        // 主音频未启用交叉淡变时绕过增益（直通）
+        cfGainNodeA.gain.value = audio.volume;
+        return true;
+    } catch (e) {
+        console.warn('AudioContext 初始化失败，回退到裸切歌', e);
+        audioCtx_cf = null;
+        return false;
+    }
+}
+
+// 🔥 v2.8.9: 初始化交叉淡变（替代 initAudioPool）
+function initCrossfadeEngine() {
+    cfAudioB = new Audio();
+    cfAudioB.crossOrigin = 'anonymous';
+    cfAudioB.preload = 'auto';
+    cfActive = 'A';
+    cfAirLocked = false;
+    cfTransitionId = 0;
+}
+
+// 🔥 v2.8.9: AudioContext 状态枚举替代旧 CrossfadeState
+const CfState = { IDLE: 0, PRELOADING: 1, FADING: 2 };
+let cfState = CfState.IDLE;
+
 // 均衡器
 let eqFilters = [];
 let eqBands = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -97,12 +170,38 @@ let fpsFrames = 0;
 let fpsLastTime = performance.now();
 let particleCount = MAX_PARTICLES; // 动态粒子数量
 
+// 🚀 v2.8.4: 节能模式状态机 — 位标志叠加，支持多模式共存
+const EnergyMode = {
+    NONE: 0,
+    ONE_CLICK: 1,    // 🔋 用户手动开启
+    PIP_TEMP: 2,     // 📺 画中画临时节能
+    FRAME_LIMIT: 4,  // 🎬 帧率限制（30fps）
+    VISIBILITY: 8    // 👁 标签页隐藏
+};
+let energyModeFlags = EnergyMode.NONE;
+
+function shouldBeEnergySaving() {
+    return energyModeFlags !== EnergyMode.NONE;
+}
+
+// 🚀 v2.8.2: 新增节能模式状态机（保留旧变量向后兼容）
+let oneClickEnergySaving = false;  // 🔋 一键节能：去除所有动效，保持亮度
+let frameEnergySaving = false;     // 🎬 画面节能：仅降至30fps
+
 // 偏好配置
 let cfg = {
     colorMode: false, customBgImg: null, customBgColor: null, blurAmt: 40,
     defaultColor: '#9ac8e2', darkMode: false, lrcFontSize: 18, lrcLineHeight: 2.2,
-    lrcAlign: 'center', themePreset: null
+    lrcAlign: 'center', themePreset: null,
+    // 🚀 v2.8.2: 节能配置重构
+    oneClickEnergyEnabled: false,   // 一键节能开关状态
+    frameEnergyEnabled: false,      // 画面节能开关状态
+    pipEnergyEnabled: true          // 临时节能开关状态
 };
+// 🚀 v2.8.2: 画中画临时节能状态标记
+let pipTempEnergySaving = false; // 标记是否因画中画而进入的临时节能模式
+// 🚀 v2.8.2+: Page Visibility API 优化变量
+let visLoopPaused = false;
 let currentAlbumColor = null, hasCurrentAlbumArt = false;
 let favorites = new Set();
 let currentViewMode = 'list';
@@ -181,8 +280,18 @@ const saveSettings = () => {
             lrcLineHeight: cfg.lrcLineHeight, lrcAlign: cfg.lrcAlign,
             themePreset: cfg.themePreset, playbackRate: playbackRate,
             preservesPitch: preservesPitch, crossfadeEnabled: crossfadeEnabled,
-            crossfadeDuration: crossfadeDuration, performanceMode: performanceMode,
-            eqGains: eqGains, lyricsOffset: lyricsOffset
+            crossfadeDuration: crossfadeDuration, 
+            // 🚀 v2.8.2: 兼容旧版 performanceMode
+            performanceMode: performanceMode,
+            // 🚀 v2.8.2: 新增节能配置
+            oneClickEnergyEnabled: cfg.oneClickEnergyEnabled,
+            frameEnergyEnabled: cfg.frameEnergyEnabled,
+            pipEnergyEnabled: cfg.pipEnergyEnabled,
+            eqGains: eqGains, lyricsOffset: lyricsOffset,
+            // 🚀 v2.8.5: 歌词对齐模式持久化
+            lyricsAlignMode: lyricsAlignMode,
+            // 🚀 v2.8.2: 兼容旧版 energySavingEnabled
+            energySavingEnabled: cfg.pipEnergyEnabled
         }));
         localStorage.setItem('MBolka_Favorites_v3', JSON.stringify([...favorites]));
         // Save play stats
@@ -211,9 +320,29 @@ const loadSettings = () => {
             preservesPitch = stored.preservesPitch ?? true;
             crossfadeEnabled = stored.crossfadeEnabled ?? false;
             crossfadeDuration = stored.crossfadeDuration ?? 3;
+            
+            // 🚀 v2.8.2: 兼容旧版 performanceMode，映射到 frameEnergyEnabled
             performanceMode = stored.performanceMode ?? false;
+            cfg.frameEnergyEnabled = stored.frameEnergyEnabled ?? performanceMode;
+            
             eqGains = stored.eqGains ?? new Array(10).fill(0);
             lyricsOffset = stored.lyricsOffset ?? 0;
+            
+            // 🚀 v2.8.5: 恢复歌词对齐模式
+            lyricsAlignMode = stored.lyricsAlignMode ?? 'center';
+            updateLrcAlignUI();
+            
+            // 🚀 v2.8.2: 兼容旧版 energySavingEnabled，映射到 pipEnergyEnabled
+            cfg.pipEnergyEnabled = stored.pipEnergyEnabled ?? stored.energySavingEnabled ?? true;
+            cfg.oneClickEnergyEnabled = stored.oneClickEnergyEnabled ?? false;
+            
+            // 🚀 v2.8.2: 同步UI开关状态
+            const oneClickToggle = document.getElementById('oneClickEnergyToggle');
+            if (oneClickToggle) oneClickToggle.checked = cfg.oneClickEnergyEnabled;
+            const frameToggle = document.getElementById('frameEnergyToggle');
+            if (frameToggle) frameToggle.checked = cfg.frameEnergyEnabled;
+            const pipToggle = document.getElementById('pipEnergyToggle');
+            if (pipToggle) pipToggle.checked = cfg.pipEnergyEnabled;
             // 🚀 同时初始化双端滑块
             el.volSlider.value = audio.volume;
             if (el.immVolSlider) el.immVolSlider.value = audio.volume;
@@ -461,6 +590,16 @@ function applyLrcSettings() {
     document.querySelectorAll('.lrc-align-btn').forEach(b => b.classList.toggle('active', b.dataset.align === cfg.lrcAlign));
 }
 
+// 🚀 v2.8.5: 歌词对齐模式UI更新
+function updateLrcAlignUI() {
+    const btnCenter = document.getElementById('btnLrcAlignCenter');
+    const btnTop = document.getElementById('btnLrcAlignTop');
+    if (btnCenter) btnCenter.classList.toggle('active', lyricsAlignMode === 'center');
+    if (btnTop) btnTop.classList.toggle('active', lyricsAlignMode === 'top');
+    // 切换 CSS 类到歌词视口
+    if (el.lrcView) el.lrcView.classList.toggle('lyrics-align-top', lyricsAlignMode === 'top');
+}
+
 // === 核心视觉与主题逻辑 ===
 const applyThemeLogic = () => {
     let targetColor = cfg.defaultColor; let showImg = false, showColor = false, bgUrl = '';
@@ -520,6 +659,7 @@ const toggleImmersiveMode = () => {
         ctx.clearRect(0, 0, el.canvasImm.width, el.canvasImm.height);
         particles = [];
         ripples = [];
+        flowField = []; // 🚀 v2.7-preview2 P1: 释放流场大数组
     }
     updateFocusContext();
 };
@@ -1030,6 +1170,7 @@ async function processFiles(files) {
             if (coverLibRefreshTimer) clearTimeout(coverLibRefreshTimer);
             coverLibRefreshTimer = setTimeout(() => {
                 // 检查用户是否打开了曲库面板
+                const coverLibModal = document.getElementById('coverLibraryModal');
                 const coverLibPanel = document.querySelector('.cover-library-panel');
                 if (coverLibPanel) {
                     const grid = document.getElementById('coverLibGrid');
@@ -1037,11 +1178,11 @@ async function processFiles(files) {
                     if (grid) {
                         const filter = searchEl ? searchEl.value : '';
                         if (coverLibSortMode === 'artist') {
-                            renderArtistGrid(grid, filter);
+                            renderArtistGrid(grid, filter, coverLibModal);
                         } else if (coverLibSortMode === 'recent') {
-                            renderRecentGrid(grid, filter);
+                            renderRecentGrid(grid, filter, coverLibModal);
                         } else {
-                            renderAlbumGrid(grid, filter);
+                            renderAlbumGrid(grid, filter, coverLibModal);
                         }
                     }
                 }
@@ -1104,10 +1245,18 @@ async function processFiles(files) {
 // 释放所有Blob URL，防止内存泄漏
 let loadedUrls = [];
 function releaseAllBlobUrls() {
+    // 释放 loadedUrls 中记录的 URL
     loadedUrls.forEach(url => {
         try { URL.revokeObjectURL(url); } catch(e) {}
     });
     loadedUrls = [];
+
+    // 🚀 v2.7-preview2 P0: 额外释放 playlist 和 musicLibrary 中可能残留的 URL（防止漏网）
+    [...playlist, ...musicLibrary].forEach(song => {
+        if (song.url && song.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(song.url); } catch(e) {}
+        }
+    });
 }
 
 // 包装parseMetadata以追踪URL + 超时熔断
@@ -1211,24 +1360,158 @@ async function parseCueFile(cueFile) {
 }
 
 // === 歌词引擎 ===
+// 🚀 v2.8.3: HTML转义防止XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 🚀 v2.8.8: 链式双语LRC解析 — 逐行处理 + 翻译启发式检测
+// LRC格式: 翻译行时间戳可能与下一句原文相同，但应配对到上一句原文
+// [02:17.63] Just keep watchin'        ← 原文1
+// [02:18.38] 只管继续欣赏              ← 翻译1（配对到原文1）
+// [02:18.38] As long as you watchin' Yeah ← 原文2
+// [02:20.94] 只要你目光追随 没错        ← 翻译2（配对到原文2）
+// [02:20.94] Just keep watchin'        ← 原文3
+// [02:25.09] 只管继续欣赏              ← 翻译3（配对到原文3）
+// 🔥 v2.8.9: LRC 解析引擎完全重写 — 单语/双语自适应，正确跳过元数据与创作信息行
 function parseLyricText(text) {
+    const lines = text.split(/\r?\n/);
+    const TS_RE = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/;
+
+    // Phase 1: 提取所有带时间戳的条目（保持原始顺序）
+    const entries = [];
+    for (const line of lines) {
+        const m = line.match(TS_RE);
+        if (!m) continue;
+        const time = parseInt(m[1]) * 60 + parseInt(m[2]) + (m[3] ? parseInt(m[3].padEnd(3, '0')) / 1000 : 0);
+        const txt = decodeText(line.replace(/\[.*?\]/g, '').trim());
+        if (!txt) continue; // 空时间戳行直接跳过
+        entries.push({ time, text: txt });
+    }
+
+    // Phase 2: 预扫描 — 检测是否为纯单语 LRC
+    let totalChinese = 0;
+    for (const e of entries) {
+        totalChinese += (e.text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    }
+    const isSingleLang = totalChinese < 3; // < 3 个中文字 → 纯单语
+
+    // Phase 3: 元数据行检测（扩展版）
+    const isMetaLine = (t) => {
+        if (!t) return true;
+        // 创作信息行: "Artist - Title" 或 "Title - Artist" 模式（通常在歌曲开头 0~8s）
+        // (在 step 中判断，不在这里)
+        // 中文制作信息
+        if (/(曲|编曲|词|混音|录音|制作|吉他|贝斯|键盘|鼓|和声|弦乐|配唱|OP|SP|ISRC)[：:\s]/.test(t)) return true;
+        // English production credits
+        if (/^(Lyrics|Composed|Arranged|Produced|Mixed|Recorded|Mastered|Performed)(\s+by)?\s*[：:]/i.test(t)) return true;
+        // 版权 / TME
+        if (/(TME享有|著作权|版权|©|Copyright)/.test(t)) return true;
+        return false;
+    };
+
+    // 创作信息行：在歌曲最开头的 10 秒内，包含 " - " 分隔符的文本
+    const isCreditLine = (t, time, idx) => {
+        if (time > 10 || idx > 5) return false;
+        // 必须包含 " - " 模式
+        return /\S+\s*-\s*\S+/.test(t);
+    };
+
+    // Phase 4: 构建歌词列表
     const result = [];
-    text.split(/\r?\n/).forEach(line => {
-        const times = line.match(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g);
-        if (times) {
-            const txt = decodeText(line.replace(/\[.*?\]/g, '').trim());
-            if (txt) {
-                times.forEach(t => {
-                    const match = t.match(/\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/);
-                    if (match) {
-                        const ms = match[3] ? parseInt(match[3].padEnd(3,'0')) : 0;
-                        result.push({ time: parseInt(match[1])*60 + parseInt(match[2]) + ms/1000, text: txt });
-                    }
-                });
-            }
+
+    if (isSingleLang) {
+        // === 单语模式：跳过元数据行即可 ===
+        for (let i = 0; i < entries.length; i++) {
+            const e = entries[i];
+            const txt = e.text.trim();
+            if (!txt) continue;
+            if (isMetaLine(txt)) continue;
+            if (isCreditLine(txt, e.time, i)) continue;
+            result.push({
+                time: e.time,
+                text: txt,
+                original: txt,
+                translation: null,
+                isBilingual: false
+            });
         }
-    });
-    result.sort((a,b) => a.time - b.time);
+        return result;
+    }
+
+    // === 双语模式：逐行翻译检测 ===
+
+    // 🔥 v2.8.9: 翻译启发式检测（优化版，移除长度规则假阳性）
+    const isTranslationLine = (entryText, pendingOrig, entryTime) => {
+        if (!pendingOrig) return false;
+        const txt = entryText.trim();
+        const origText = pendingOrig.original.trim();
+        if (!txt || !origText) return false;
+
+        // R1: 时间戳相同或几乎相同（≤ 0.15s）→ 强烈翻译/链信号
+        if (Math.abs(entryTime - pendingOrig.time) < 0.15) return true;
+
+        // R2: 本行含中文，上行不含中文 → 高度可能翻译
+        const hasCN = (t) => /[\u4e00-\u9fa5]/.test(t);
+        if (hasCN(txt) && !hasCN(origText)) return true;
+
+        // R3: 纯中 vs 纯英 → 几乎确定翻译
+        const pureCN = /^[\u4e00-\u9fa5，。！？、；：""''（）【】《》\s\.\!\?\,\;\:\'\"\-\(\)\[\]\/\\]+$/;
+        const pureEN = /^[a-zA-Z0-9\s\.,!?'"\-\(\)\[\]\{\}\/\\@#$%^&*+=:;]+$/;
+        if (pureCN.test(txt) && pureEN.test(origText)) return true;
+
+        return false;
+    };
+
+    let pendingOrig = null;
+    let i = 0;
+
+    while (i < entries.length) {
+        const e = entries[i];
+        const txt = e.text.trim();
+
+        // 跳过元数据行
+        if (isMetaLine(txt) || isCreditLine(txt, e.time, i)) {
+            pendingOrig = null;
+            i++;
+            continue;
+        }
+
+        // 🔥 核心修复：如果上一句原文已被赋翻译，则本行一定是新原文
+        if (pendingOrig && pendingOrig.translation) {
+            pendingOrig = null;
+        }
+
+        if (isTranslationLine(txt, pendingOrig, e.time)) {
+            // 本行是翻译 → 赋值给 pendingOrig（一定是 result 的最后一个）
+            if (pendingOrig && !pendingOrig.translation && result.length > 0) {
+                const last = result[result.length - 1];
+                if (last === pendingOrig && !last.translation) {
+                    last.translation = txt;
+                    last.isBilingual = true;
+                    last.text = last.original + '\n' + txt;
+                    // 🔥 关键：原文获得翻译后，清空 pendingOrig
+                    pendingOrig = null;
+                }
+            }
+            i++;
+        } else {
+            // 本行是原文
+            const item = {
+                time: e.time,
+                text: txt,
+                original: txt,
+                translation: null,
+                isBilingual: false
+            };
+            result.push(item);
+            pendingOrig = item;
+            i++;
+        }
+    }
+
     return result;
 }
 
@@ -1271,7 +1554,21 @@ const loadLrc = async (song) => {
         el.lrcPanel.style.display = 'flex'; el.btnToggleLrc.classList.add('active');
         el.immLrcCenter.classList.remove('hidden');
         parsedLyrics.forEach((l) => {
-            const d = document.createElement('div'); d.className = 'lrc-line'; d.textContent = l.text;
+            const d = document.createElement('div');
+            d.className = 'lrc-line';
+            d.dataset.time = l.time; // 🚀 v2.8.3: 存储时间戳用于同步匹配
+            
+            if (l.isBilingual) {
+                // 双语行：原文 + 翻译
+                d.innerHTML = `
+                    <span class="lrc-original">${escapeHtml(l.original)}</span>
+                    <span class="lrc-translation">${escapeHtml(l.translation)}</span>
+                `;
+                d.classList.add('bilingual');
+            } else {
+                d.textContent = l.text;
+            }
+            
             d.onclick = () => { audio.currentTime = l.time + lyricsOffset; syncLyrics(true); };
             el.lrcView.appendChild(d);
         });
@@ -1297,8 +1594,12 @@ const syncLyrics = (force = false) => {
     if(!parsedLyrics.length) return;
     const cur = audio.currentTime - lyricsOffset;
     let activeIdx = -1;
-    for (let i = 0; i < parsedLyrics.length; i++) { if (cur >= parsedLyrics[i].time - 0.2) activeIdx = i; else break; }
+    // 🚀 v2.8.5: 更精确的索引计算，移除 -0.2 偏移以提高响应速度
+    for (let i = parsedLyrics.length - 1; i >= 0; i--) {
+        if (cur >= parsedLyrics[i].time) { activeIdx = i; break; }
+    }
 
+    // 主界面歌词面板高亮
     if (el.lrcPanel.style.display !== 'none') {
         const lines = el.lrcView.querySelectorAll('.lrc-line');
         lines.forEach((line, i) => {
@@ -1306,7 +1607,28 @@ const syncLyrics = (force = false) => {
                 if (!line.classList.contains('active')) {
                     line.classList.add('active');
                     if (!isUserScrollingLyrics || force) {
-                        const offset = line.offsetTop - el.lrcView.offsetTop - (el.lrcView.clientHeight / 2) + (line.clientHeight / 2);
+                        // 🩹 v2.8.8: 强制重排（读取 offsetHeight 触发浏览器布局）
+                        void line.offsetHeight;
+
+                        // 🩹 v2.8.8: 使用 getBoundingClientRect() 获取渲染后实际位置
+                        const rect = line.getBoundingClientRect();
+                        const viewRect = el.lrcView.getBoundingClientRect();
+                        
+                        let offset;
+                        if (lyricsAlignMode === 'center') {
+                            // 模式 A：完全垂直居中
+                            // 🩹 纳入 transform: scale(1.05) 视觉放大因子
+                            const scale = 1.05;
+                            const visualHeight = rect.height * scale;
+                            offset = rect.top - viewRect.top
+                                + el.lrcView.scrollTop
+                                - (viewRect.height / 2) + (visualHeight / 2);
+                        } else {
+                            // 🚀 模式 B：偏上显示（距离顶部 30%）
+                            offset = rect.top - viewRect.top
+                                + el.lrcView.scrollTop
+                                - (viewRect.height * 0.3);
+                        }
                         el.lrcView.scrollTo({ top: offset, behavior: 'smooth' });
                     }
                 }
@@ -1314,11 +1636,43 @@ const syncLyrics = (force = false) => {
         });
     }
 
+    // 🚀 v2.8.8: 沉浸模式歌词 — 双语:原文+翻译 / 单语:当前+下一句
     if (activeIdx !== -1 && !el.immLrcCenter.classList.contains('hidden')) {
-        const curTxt = parsedLyrics[activeIdx].text;
-        const nextTxt = activeIdx+1 < parsedLyrics.length ? parsedLyrics[activeIdx+1].text : '';
-        if(el.immCurrLine.textContent !== curTxt) { el.immCurrLine.style.opacity=0; setTimeout(()=>{ el.immCurrLine.textContent=curTxt; el.immCurrLine.style.opacity=1; }, 200); }
-        if(el.immNextLine.textContent !== nextTxt) { el.immNextLine.style.opacity=0; setTimeout(()=>{ el.immNextLine.textContent=nextTxt; el.immNextLine.style.opacity=1; }, 200); }
+        const currentLrc = parsedLyrics[activeIdx];
+
+        // 第一行：当前句原文
+        const curTxt = currentLrc.original || currentLrc.text;
+        if (el.immCurrLine.textContent !== curTxt || force) {
+            el.immCurrLine.style.opacity = 0;
+            setTimeout(() => {
+                el.immCurrLine.textContent = curTxt;
+                el.immCurrLine.style.opacity = 1;
+            }, 200);
+        }
+
+        // 第二行：双语显示翻译，单语显示下一句（🩹 v2.8.8 紧急修复）
+        let nextTxt = '';
+        let nextOpacity = 0;
+        if (currentLrc.isBilingual && currentLrc.translation) {
+            // 双语模式：显示当前句翻译
+            nextTxt = currentLrc.translation;
+            nextOpacity = 0.85;
+        } else {
+            // 单语模式：显示下一句原文
+            const nextLrc = (activeIdx + 1 < parsedLyrics.length) ? parsedLyrics[activeIdx + 1] : null;
+            if (nextLrc) {
+                nextTxt = nextLrc.original || nextLrc.text;
+                nextOpacity = 0.6;
+            }
+        }
+
+        if (el.immNextLine.textContent !== nextTxt || force) {
+            el.immNextLine.style.opacity = 0;
+            setTimeout(() => {
+                el.immNextLine.textContent = nextTxt;
+                el.immNextLine.style.opacity = nextOpacity;
+            }, 200);
+        }
     }
 };
 
@@ -1330,6 +1684,14 @@ function getLyricAtTime(time) {
     for (let i = 0; i < parsedLyrics.length; i++) {
         if (parsedLyrics[i].time <= adjustedTime) best = parsedLyrics[i];
         else break;
+    }
+    
+    // 🚀 v2.8.3: 双语歌词显示原文+翻译
+    if (best && best.isBilingual) {
+        return {
+            ...best,
+            text: `${best.original} | ${best.translation}` // 进度条预览显示合并文本
+        };
     }
     return best;
 }
@@ -1456,97 +1818,248 @@ function togglePitchPreserve() {
     showToast(preservesPitch ? '已锁定音调' : '已允许升降调');
 }
 
-// === 终极双向锁定淡入淡出引擎 ===
-function setupCrossfade() {
-    audio.addEventListener('timeupdate', () => {
-        // 如果未开启、单曲循环或列表少于2首，不触发
-        if (!crossfadeEnabled || isRepeatOne || playlist.length < 2) return;
-        
-        const remaining = audio.duration - audio.currentTime;
-        
-        // 只有当进入切歌临界区，且当前 [没有] 处于淡入淡出状态时，才触发一次
-        if (remaining <= crossfadeDuration && !isFading && remaining > 0.5) {
-            isFading = true; // 立刻上锁
-            triggerFadeOut();
-        }
-    });
-}
-
-function triggerFadeOut() {
-    const userVolume = parseFloat(el.volSlider.value); // 获取用户设定的音量
-    const step = 0.05; // 每次音量递减的幅度
-    
-    // 动态计算定时器的时间间隔，确保在指定的 crossfadeDuration 内刚好淡出到 0
-    const stepsCount = userVolume / step;
-    const intervalTime = stepsCount > 0 ? (crossfadeDuration * 1000) / stepsCount : 100;
-    
-    const fadeOutInterval = setInterval(() => {
-        if (audio.volume > step) {
-            audio.volume = Math.max(0, audio.volume - step);
-        } else {
-            clearInterval(fadeOutInterval);
-            audio.volume = 0;
-            
-            // 自动切歌
-            goNext();
-            
-            // 触发新歌淡入
-            triggerFadeIn(userVolume);
-        }
-    }, intervalTime);
-}
-
-function triggerFadeIn(targetVolume) {
-    audio.volume = 0;
-    const step = 0.05;
-    const fadeInDuration = 1.5; // 淡入固定为 1.5 秒，听感最自然
-    const stepsCount = targetVolume / step;
-    const intervalTime = stepsCount > 0 ? (fadeInDuration * 1000) / stepsCount : 100;
-    
-    let fadeInInterval = null;
-    
-    // 🚀 核心保护：必须等音频真正开始播放（playing 事件）后才启动淡入定时器
-    // 防止歌曲因网络/磁盘缓冲延迟导致提前淡入完成，随后爆音
-    const onPlaying = () => {
-        audio.removeEventListener('playing', onPlaying);
-        
-        fadeInInterval = setInterval(() => {
-            if (audio.volume < targetVolume - step) {
-                audio.volume = Math.min(targetVolume, audio.volume + step);
-            } else {
-                clearInterval(fadeInInterval);
-                audio.volume = targetVolume; // 确保音量完全恢复
-                isFading = false; // 彻底解开状态锁，迎接下一首
-            }
-        }, intervalTime);
-    };
-    
-    // 如果已经处于 playing 状态（如手动切歌后被重置），直接启动
-    if (!audio.paused && audio.currentTime > 0 && audio.readyState >= 2) {
-        onPlaying();
-    } else {
-        audio.addEventListener('playing', onPlaying, { once: false });
-        // 🚀 兜底保护：如果 5 秒内还没 playing，强制启动淡入防止永久静音
-        setTimeout(() => {
-            audio.removeEventListener('playing', onPlaying);
-            if (isFading && audio.volume === 0) {
-                audio.volume = targetVolume;
-                isFading = false;
-            }
-        }, 5000);
+// 🚀 v2.8.5: 统一下一首选择逻辑，与 goNext() 保持一致
+function getNextTrackIndex() {
+    if (!playlist.length) return -1;
+    if (isShuffle) {
+        if (playlist.length <= 1) return currentIndex;
+        let next;
+        do { next = Math.floor(Math.random() * playlist.length); }
+        while (next === currentIndex);
+        return next;
     }
+    return (currentIndex + 1) % playlist.length;
+}
+
+// === 🔥 v2.8.9: Crossfade 引擎全面重写 — Web Audio API + GainNode 精确定时淡变 ===
+// 架构：固定双槽位 A/B（永不交换），AudioContext.lazyInit，semaphore 防止重叠
+
+// 🔥 v2.8.9: 交叉淡变扫描器（轻量 rAF 循环，仅在启用时运行）
+function cfSetupScanner() {
+    if (cfRafId) cancelAnimationFrame(cfRafId);
+    cfState = CfState.IDLE;
+    cfAirLocked = false;
+
+    const scan = () => {
+        if (!crossfadeEnabled || isRepeatOne || playlist.length < 2 || cfState !== CfState.IDLE) {
+            cfRafId = requestAnimationFrame(scan);
+            return;
+        }
+        const remaining = (audio.duration || 0) - audio.currentTime;
+        if (remaining > 0 && remaining <= crossfadeDuration && remaining > 0.3 && !audio.paused && !cfAirLocked) {
+            cfTriggerCrossfade();
+        }
+        cfRafId = requestAnimationFrame(scan);
+    };
+    cfRafId = requestAnimationFrame(scan);
+}
+
+// 🔥 v2.8.9: 提前预加载（当前歌曲播放到 50% 时预加载下一首到被动槽）
+function cfPreloadNext() {
+    if (cfPreloadTimer) clearTimeout(cfPreloadTimer);
+    if (!crossfadeEnabled || playlist.length < 2 || !audio.duration) return;
+    const preloadAt = (audio.duration - crossfadeDuration - 1) * 1000;
+    if (preloadAt <= 0) return;
+    cfPreloadTimer = setTimeout(() => {
+        const nextIdx = getNextTrackIndex();
+        if (nextIdx < 0) return;
+        const passive = cfGetPassiveAudio();
+        if (!passive.src || passive.src !== playlist[nextIdx].url) {
+            passive.src = playlist[nextIdx].url;
+            passive.load();
+        }
+    }, Math.max(preloadAt, 0));
+}
+
+// 🔥 v2.8.9: 触发交叉淡变（异步预加载 + GainNode 斜坡）
+async function cfTriggerCrossfade() {
+    if (cfState !== CfState.IDLE || cfAirLocked) return;
+    cfState = CfState.PRELOADING;
+
+    // 初始化 AudioContext（首次调用时）
+    if (!cfEnsureContext()) { cfState = CfState.IDLE; goNext(); return; }
+    // 恢复 AudioContext（可能被浏览器挂起）
+    if (audioCtx_cf.state === 'suspended') await audioCtx_cf.resume();
+
+    const tid = ++cfTransitionId;       // 事务 ID
+    const userVol = parseFloat(el.volSlider.value);
+    const nextIdx = getNextTrackIndex();
+    if (nextIdx < 0) { cfState = CfState.IDLE; return; }
+
+    const passiveEl = cfGetPassiveAudio();
+    const targetUrl = playlist[nextIdx].url;
+
+    // 仅当被动槽不是同一 URL 时才重新加载
+    if (passiveEl.src !== targetUrl) {
+        passiveEl.src = targetUrl;
+        passiveEl.load();
+    }
+
+    // 等待预加载完成（3 秒超时回退）
+    try {
+        await Promise.race([
+            new Promise((res, rej) => {
+                passiveEl.addEventListener('loadeddata', res, { once: true });
+                passiveEl.addEventListener('error', rej, { once: true });
+            }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))
+        ]);
+    } catch (e) {
+        if (tid !== cfTransitionId) return;  // 已被新事务覆盖
+        console.warn('交叉淡变预加载失败，直接切歌', e);
+        cfState = CfState.IDLE;
+        goNext();
+        return;
+    }
+
+    // 再次校验，防止重叠
+    if (tid !== cfTransitionId || cfState !== CfState.PRELOADING) return;
+    cfState = CfState.FADING;
+    cfAirLocked = true;
+
+    // 启动被动槽播放
+    passiveEl.currentTime = 0;
+    passiveEl.play().catch(e => {
+        console.error('交叉淡变播放失败', e);
+        cfAbortTransition(tid);
+        goNext();
+        return;
+    });
+
+    // 🔥 核心：Web Audio API GainNode 精确定时斜坡
+    const now = audioCtx_cf.currentTime;
+    const dur = crossfadeDuration;
+    const activeGain = cfGetActiveGain();
+    const passiveGain = cfGetPassiveGain();
+
+    // 确保 AudioContext 输出对准当前用户音量
+    activeGain.gain.cancelScheduledValues(now);
+    passiveGain.gain.cancelScheduledValues(now);
+    activeGain.gain.setValueAtTime(userVol, now);
+    passiveGain.gain.setValueAtTime(0, now);
+    // 指数斜坡：人耳感知最平滑
+    activeGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    passiveGain.gain.exponentialRampToValueAtTime(userVol, now + dur);
+
+    // 定时完成
+    setTimeout(() => cfFinishTransition(nextIdx, userVol, tid), dur * 1000 + 50);
+}
+
+// 🔥 v2.8.9: 完成交叉淡变过渡
+function cfFinishTransition(nextIdx, userVol, tid) {
+    if (tid !== cfTransitionId) return;
+    cfState = CfState.IDLE;
+    cfAirLocked = false;
+
+    // 停止旧活跃槽
+    const oldActive = cfGetActiveAudio();
+    oldActive.onended = null;
+    oldActive.pause();
+    oldActive.src = '';
+    oldActive.load();
+
+    // 清理旧增益（确保静音）
+    const oldGain = cfGetActiveGain();
+    oldGain.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+    oldGain.gain.value = 0;
+
+    // 🔥 交换槽位：新歌曲成为活跃槽
+    const newActive = cfGetPassiveAudio();
+    cfActive = cfActive === 'A' ? 'B' : 'A';
+
+    // 新活跃增益确保为目标音量
+    const newGain = cfGetActiveGain();
+    newGain.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+    newGain.gain.value = userVol;
+
+    // 更新状态
+    currentIndex = nextIdx;
+    const song = playlist[currentIndex];
+    el.mainTitle.textContent = el.immTitle.textContent = song.title;
+    el.mainArtist.textContent = el.immArtist.textContent = song.artist;
+    document.title = `${song.title} - ${song.artist}`;
+
+    // 同步播放速度
+    newActive.playbackRate = playbackRate;
+    newActive.preservesPitch = preservesPitch;
+
+    // onended 绑定在 cfActive 指向的元素上
+    newActive.onended = () => {
+        if (isRepeatOne) { newActive.currentTime = 0; newActive.play(); return; }
+        goNext();
+    };
+
+    setPlayState(true);
+    loadLrc(song);
+    renderPlaylist();
+    recordPlay(song);
+    updateFavQuickBtn();
+    updatePipQuickBtn();
+    applyThemeLogic();
+
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: song.title, artist: song.artist,
+            artwork: song.art ? [{ src: song.art, sizes: '512x512', type: 'image/jpeg' }] : []
+        });
+    }
+
+    // 预加载下一首（被动槽现在是空的）
+    cfPreloadNext();
+}
+
+// 🔥 v2.8.9: 紧急中止交叉淡变
+function cfAbortTransition(tid) {
+    if (tid !== cfTransitionId) return;
+    cfState = CfState.IDLE;
+    cfAirLocked = false;
+    const pGain = cfGetPassiveGain();
+    if (audioCtx_cf && pGain) {
+        pGain.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+        pGain.gain.value = 0;
+    }
+    const passive = cfGetPassiveAudio();
+    passive.pause();
+    passive.src = '';
+    passive.load();
 }
 
 // === 播放控制 ===
 const playAudio = async (idx) => {
     if (!playlist[idx]) return;
     
-    // 🚀 核心修复：手动切歌时，必须强制打断并释放所有正在运行的淡入淡出状态
-    isFading = false;
-    audio.volume = parseFloat(el.volSlider.value); // 立即恢复为用户设定的标准音量
+    // 🔥 v2.8.9: 手动切歌时，中止正在进行的交叉淡变
+    if (cfState !== CfState.IDLE || cfAirLocked) {
+        cfAbortTransition(++cfTransitionId);
+        cfState = CfState.IDLE;
+        cfAirLocked = false;
+        // 恢复当前活跃音频增益
+        const aGain = cfGetActiveGain();
+        if (audioCtx_cf && aGain) {
+            aGain.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+            aGain.gain.value = parseFloat(el.volSlider.value);
+        }
+        // 停止被动槽
+        const passive = cfGetPassiveAudio();
+        passive.onended = null;
+        passive.pause();
+        passive.src = '';
+        passive.load();
+        // 增益归零
+        const pGain = cfGetPassiveGain();
+        if (audioCtx_cf && pGain) {
+            pGain.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+            pGain.gain.value = 0;
+        }
+    } else {
+        audio.volume = parseFloat(el.volSlider.value);
+    }
     
-    if (currentIndex !== idx) { playHistory.push(idx); currentIndex = idx; }
+    if (currentIndex !== idx) { playHistory.push(idx); if (playHistory.length > 200) playHistory.shift(); currentIndex = idx; }
     const song = playlist[idx];
+
+    // 🔥 v2.8.9: 确保活跃槽指向 audio（手动切歌始终使用主音频槽）
+    cfActive = 'A';
     audio.src = song.url;
 
     // 同步信息到双界面
@@ -1614,6 +2127,8 @@ const playAudio = async (idx) => {
         await audio.play();
         setPlayState(true);
         if(!audioCtx) { initVis(); initEQ(); }
+        // 🔥 v2.8.9: 播放开始后预加载下一首
+        cfPreloadNext();
     } catch(e) {
         setPlayState(false);
         showToast("❌ 播放受阻");
@@ -1628,8 +2143,11 @@ const setPlayState = (playing) => {
 
 const togglePlay = () => {
     if (!playlist.length) return el.btnLoad.click();
-    if (isPlaying) audio.pause();
-    else audio.play();
+    if (isPlaying) { audio.pause(); }
+    else {
+        audio.play();
+        cfPreloadNext(); // 🔥 v2.8.9: 恢复播放后预加载
+    }
     setPlayState(!isPlaying);
     createRipple(window.innerWidth/2, window.innerHeight/2);
 };
@@ -1642,7 +2160,12 @@ const goNext = () => {
         setPlayState(true);
         return;
     }
-    playAudio(isShuffle ? Math.floor(Math.random()*playlist.length) : (currentIndex + 1) % playlist.length);
+    // 🔥 v2.8.9: 交叉淡变进行中时阻止重复触发
+    if (cfState !== CfState.IDLE || cfAirLocked) {
+        console.log('交叉淡变进行中，跳过 goNext()');
+        return;
+    }
+    playAudio(getNextTrackIndex());
     createExplosion(window.innerWidth*0.8, window.innerHeight/2, 2);
 };
 
@@ -1797,8 +2320,8 @@ function bindProgressBar(progArea, progFill, timeDisplayEl, isMain) {
         let pct = (clientX - rect.left) / rect.width;
         pct = Math.max(0, Math.min(1, pct)); // 严格限制在 0 ~ 1 之间
         
-        // 实时平滑更新 UI 进度条
-        progFill.style.width = (pct * 100) + '%';
+        // 🚀 v2.7: 进度条改用 transform:scaleX 避免布局重排
+        progFill.style.transform = `scaleX(${pct})`;
         
         // 拖拽时实时更新当前数字时间，体验更跟手
         if (timeDisplayEl) {
@@ -1864,18 +2387,19 @@ bindProgressBar(el.immProgArea, el.immProgFill, document.getElementById('immTime
 // === 必须修改 audio.ontimeupdate 以防止系统时间覆盖拖拽进度 ===
 audio.ontimeupdate = () => {
     if (audio.duration) {
-        // 🚀 只有当用户 [没有在拖拽] 时，才让系统自增更新进度条
+        // 🚀 v2.7: 进度条改用 transform:scaleX 避免布局重排
         if (!isProgressDragging) {
-            const pct = `${(audio.currentTime / audio.duration) * 100}%`;
-            if (el.progFillMain) el.progFillMain.style.width = pct;
-            if (el.immProgFill) el.immProgFill.style.width = pct;
+            const pct = audio.currentTime / audio.duration;
+            if (el.progFillMain) el.progFillMain.style.transform = `scaleX(${pct})`;
+            if (el.immProgFill) el.immProgFill.style.transform = `scaleX(${pct})`;
             
             if (el.timeCur) el.timeCur.textContent = formatTime(audio.currentTime);
             const immTimeCur = document.getElementById('immTimeCur');
             if (immTimeCur) immTimeCur.textContent = formatTime(audio.currentTime);
         }
         
-        syncLyrics();
+        // 🚀 v2.7: 节能模式下歌词走低频定时器，跳过此高频回调
+        if (!isEnergySaving) syncLyrics();
         
         // A-B 重复判定
         if (abMode && abPointA !== null && abPointB !== null) {
@@ -1900,22 +2424,38 @@ audio.onloadedmetadata = () => {
     if (abMode) updateABMarkers();
 };
 
+// 🔥 v2.8.9: 统一音量控制 — 交叉淡变启用时路由到 GainNode，否则直设 audio.volume
+const cfSetVolume = (vol) => {
+    audio.volume = vol;
+    if (audioCtx_cf && cfGainNodeA) {
+        cfGainNodeA.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+        cfGainNodeA.gain.value = vol;
+    }
+    if (audioCtx_cf && cfGainNodeB) {
+        cfGainNodeB.gain.cancelScheduledValues(audioCtx_cf.currentTime);
+        cfGainNodeB.gain.value = 0; // 被动槽保持静音
+    }
+    el.volSlider.value = vol;
+    if (el.immVolSlider) el.immVolSlider.value = vol;
+    saveSettings();
+};
+
+// 🔥 v2.8.9: 音量滑块事件 — 统一路由到 cfSetVolume
+el.volSlider.oninput = (e) => { cfSetVolume(parseFloat(e.target.value)); };
+const adjustVolume = (delta) => { 
+    const newVol = Math.max(0, Math.min(1, audio.volume + delta));
+    cfSetVolume(newVol);
+};
+
 audio.onended = () => {
     if (isRepeatOne) {
         audio.currentTime = 0;
         audio.play();
         return;
     }
+    // 🔥 v2.8.9: 运行中的交叉淡变不重复触发
+    if (cfState !== CfState.IDLE || cfAirLocked) return;
     goNext();
-};
-
-el.volSlider.oninput = (e) => { audio.volume = e.target.value; saveSettings(); };
-const adjustVolume = (delta) => { 
-    audio.volume = Math.max(0, Math.min(1, audio.volume + delta)); 
-    el.volSlider.value = audio.volume; 
-    // 🚀 新增：同步手柄调音到沉浸滑块
-    if (el.immVolSlider) el.immVolSlider.value = audio.volume; 
-    saveSettings(); 
 };
 
 // === 睡眠定时器 ===
@@ -1963,6 +2503,36 @@ function updateSleepTimerUI() {
 }
 // 每秒更新
 setInterval(updateSleepTimerUI, 1000);
+
+// 🚀 v2.8: 睡眠定时器快速菜单 (Alt+T 快捷键)
+function showSleepQuickMenu() {
+    closeAllModals();
+    const menu = document.createElement('div');
+    menu.className = 'modal-overlay open';
+    menu.style.zIndex = '2000';
+    menu.innerHTML = `
+        <div class="modal-content" style="width:320px;padding:20px;text-align:center;">
+            <div style="font-size:18px;margin-bottom:16px;">🌙 睡眠定时器</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <button class="btn-glass focusable" data-min="15" style="justify-content:center;">15分钟</button>
+                <button class="btn-glass focusable" data-min="30" style="justify-content:center;">30分钟</button>
+                <button class="btn-glass focusable" data-min="60" style="justify-content:center;">60分钟</button>
+                <button class="btn-glass focusable" data-min="0" style="justify-content:center;color:#ff6b6b;">取消定时</button>
+            </div>
+            <button class="btn-glass focusable" data-min="-1" style="width:100%;justify-content:center;margin-top:8px;opacity:0.6;">关闭</button>
+        </div>
+    `;
+    document.body.appendChild(menu);
+    menu.querySelectorAll('[data-min]').forEach(b => {
+        b.onclick = () => {
+            const m = parseInt(b.dataset.min);
+            if (m >= 0) setSleepTimer(m);
+            menu.remove();
+        };
+    });
+    menu.onclick = (e) => { if (e.target === menu) menu.remove(); };
+    updateFocusContext();
+}
 
 // === 导出/导入 ===
 function exportPlaylist(format = 'json') {
@@ -2059,14 +2629,117 @@ function searchPlaylist(query) {
 
 // === 画中画 (Document Picture-in-Picture) v2.2 重构 ===
 let pipWindow = null;
+let pipSyncInterval = null; // 🚀 v2.7-preview2 P1: 提升为模块级变量以支持彻底清理
+let pipHealthCheck = null;   // 🚀 v2.7-preview2 P1: 健康检查兜底
+let isEnergySaving = false; // 🚀 v2.7: 节能模式状态机（与 v2.8.4 bit-flag 并行）
+
+// 🚀 v2.8.4: 进入指定节能模式（位运算，支持叠加）
+function enterEnergySaving(mode = EnergyMode.PIP_TEMP) {
+    const wasSaving = shouldBeEnergySaving();
+    energyModeFlags |= mode;
+
+    if (!wasSaving && shouldBeEnergySaving()) {
+        // 首次进入节能状态，执行实际节能操作
+        applyEnergySaving(true, mode);
+    }
+
+    // 更新 CSS pip-standby 类：只有 PIP_TEMP 或 VISIBILITY 才添加暗黑类
+    const wrapper = document.querySelector('.player-wrapper');
+    if (wrapper) {
+        wrapper.classList.toggle('pip-standby',
+            (energyModeFlags & (EnergyMode.PIP_TEMP | EnergyMode.VISIBILITY)) !== 0);
+    }
+}
+
+// 🚀 v2.8.4: 退出指定节能模式
+function exitEnergySaving(mode = EnergyMode.PIP_TEMP) {
+    const wasSaving = shouldBeEnergySaving();
+    energyModeFlags &= ~mode;
+
+    if (wasSaving && !shouldBeEnergySaving()) {
+        // 完全退出节能状态
+        applyEnergySaving(false);
+    }
+
+    // 更新 pip-standby
+    const wrapper = document.querySelector('.player-wrapper');
+    if (wrapper) {
+        const hasPipStandby = (energyModeFlags & (EnergyMode.PIP_TEMP | EnergyMode.VISIBILITY)) !== 0;
+        wrapper.classList.toggle('pip-standby', hasPipStandby);
+    }
+
+    // 同步旧标记
+    pipTempEnergySaving = (energyModeFlags & EnergyMode.PIP_TEMP) !== 0;
+    oneClickEnergySaving = (energyModeFlags & EnergyMode.ONE_CLICK) !== 0;
+}
+
+// 🚀 v2.8.4: 实际应用/取消节能效果
+function applyEnergySaving(enable, triggerMode = EnergyMode.NONE) {
+    isEnergySaving = enable;
+
+    if (enable) {
+        // 🚀 v2.7.0: 强制退出沉浸模式 — 停止所有动画特效并释放内存
+        if (isImmersiveMode) {
+            isImmersiveMode = false;
+            el.viewImm.classList.add('hidden'); el.viewMain.classList.remove('hidden');
+            document.body.style.background = 'var(--bg-dark)';
+            immCanvasCleared = true;
+            const immCtx = el.canvasImm.getContext('2d');
+            if (immCtx) immCtx.clearRect(0, 0, el.canvasImm.width, el.canvasImm.height);
+            updateFocusContext();
+        }
+
+        // 清空粒子池
+        particles.length = 0;
+        ripples.length = 0;
+        flowField = [];
+
+        // 清空流沙背景 Canvas
+        const bgCtx = el.bgColor.getContext('2d');
+        if (bgCtx) bgCtx.clearRect(0, 0, el.bgColor.width, el.bgColor.height);
+
+        // 暂停主频谱Canvas渲染
+        if (spectrumCtxMain) {
+            const cvs = el.canvasMain;
+            if (cvs) spectrumCtxMain.clearRect(0, 0, cvs.width || cvs.offsetWidth, cvs.height || cvs.offsetHeight);
+        }
+
+        // 降低歌词同步频率
+        if (lrcTimer) clearInterval(lrcTimer);
+        lrcTimer = setInterval(() => syncLyrics(true), 500);
+
+        // 🔋 一键节能时显示特定提示
+        if (triggerMode === EnergyMode.ONE_CLICK || (triggerMode & EnergyMode.ONE_CLICK)) {
+            showToast("🔋 一键节能已开启", "⚡");
+        }
+    } else {
+        // 恢复歌词高频同步
+        if (lrcTimer) { clearInterval(lrcTimer); lrcTimer = null; }
+
+        // 恢复视觉特效
+        if (analyser && !isImmersiveMode) {
+            requestAnimationFrame(renderVisLoop);
+        }
+
+        pipTempEnergySaving = false;
+        showToast("🔋 节能模式已退出", "⚡");
+    }
+}
+
+let lrcTimer = null; // 🚀 v2.7: 歌词降频定时器句柄
 
 async function togglePip() {
     if (pipWindow) {
+        // 🚀 v2.7-preview2 P1: 关闭 PiP 时彻底清理所有定时器
+        if (pipSyncInterval) { clearInterval(pipSyncInterval); pipSyncInterval = null; }
+        if (pipHealthCheck) { clearInterval(pipHealthCheck); pipHealthCheck = null; }
         pipWindow.close();
         pipWindow = null;
-        // 🚀 v2.6: 关闭 PiP，恢复主窗口活力
-        const wrapper = document.querySelector('.player-wrapper');
-        if (wrapper) wrapper.classList.remove('pip-standby');
+
+        // 🔧 v2.8.4: 关闭画中画时退出 PiP 临时节能（保留一键节能等其他模式）
+        exitEnergySaving(EnergyMode.PIP_TEMP);
+        pipTempEnergySaving = false;
+        // 如果是用户手动开启的节能模式（非临时），则保持
         updatePipQuickBtn();
         return;
     }
@@ -2081,15 +2754,18 @@ async function togglePip() {
             width: 400, height: 280
         });
 
-        // 🚀 v2.6: PiP 激活后，主窗口进入微待机省电模式
-        const wrapper = document.querySelector('.player-wrapper');
-        if (wrapper) wrapper.classList.add('pip-standby');
+        // 🔧 v2.8.4: 根据临时节能开关决定是否进入 PiP 节能（与一键节能叠加）
+        if (cfg.pipEnergyEnabled) {
+            enterEnergySaving(EnergyMode.PIP_TEMP);
+            pipTempEnergySaving = true;
+        }
 
         // PiP 窗口关闭监听 — 用户点 × 关闭时也要恢复主窗口
         pipWindow.addEventListener('pagehide', () => {
             pipWindow = null;
-            const w = document.querySelector('.player-wrapper');
-            if (w) w.classList.remove('pip-standby');
+            // 🔧 v2.8.4: 退出 PiP 临时节能
+            exitEnergySaving(EnergyMode.PIP_TEMP);
+            pipTempEnergySaving = false;
             updatePipQuickBtn();
         });
 
@@ -2292,9 +2968,12 @@ async function togglePip() {
         };
 
         // 5. 启动定时同步 (每500ms)
-        let pipSyncInterval = setInterval(() => {
+        pipSyncInterval = setInterval(() => {
             if (!pipWindow || pipWindow.closed) {
                 clearInterval(pipSyncInterval);
+                clearInterval(pipHealthCheck);
+                pipSyncInterval = null;
+                pipHealthCheck = null;
                 pipWindow = null;
                 updatePipQuickBtn();
                 return;
@@ -2302,11 +2981,29 @@ async function togglePip() {
             updatePipUI();
         }, 500);
 
+        // 🚀 v2.7-preview2 P1: 健康检查兜底 — 每10秒检查 PiP 窗口是否被外部关闭
+        pipHealthCheck = setInterval(() => {
+            if (!pipWindow || pipWindow.closed) {
+                clearInterval(pipSyncInterval);
+                clearInterval(pipHealthCheck);
+                pipSyncInterval = null;
+                pipHealthCheck = null;
+                pipWindow = null;
+                // 🔧 v2.8.4: 退出 PiP 临时节能
+                exitEnergySaving(EnergyMode.PIP_TEMP);
+                pipTempEnergySaving = false;
+                updatePipQuickBtn();
+            }
+        }, 10000);
+
         // 初始化一次
         updatePipUI();
 
         pipWindow.addEventListener('pagehide', () => {
             clearInterval(pipSyncInterval);
+            clearInterval(pipHealthCheck);
+            pipSyncInterval = null;
+            pipHealthCheck = null;
             pipWindow = null;
             updatePipQuickBtn();
         });
@@ -2339,7 +3036,7 @@ class Particle {
         this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.color = color; this.size = size; this.life = 1; this.active = true; return this;
     }
     update() { this.x += this.vx; this.y += this.vy; this.life -= 0.02; this.size *= 0.95; this.vx *= 0.95; this.vy *= 0.95; return this.life > 0; }
-    draw(ctx) { if(!this.active) return; ctx.save(); ctx.globalAlpha = this.life; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+    draw(ctx) { if(!this.active) return; const prevAlpha = ctx.globalAlpha; ctx.globalAlpha = this.life; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = prevAlpha; }
     kill() { this.active = false; }
 }
 // 预分配池
@@ -2396,6 +3093,7 @@ const createRipple = (x, y) => {
 };
 
 document.addEventListener('mousemove', (e) => {
+    if (isEnergySaving) return; // 🚀 v2.7: 节能模式不产生粒子
     mouseX = e.clientX; mouseY = e.clientY;
     if (isImmersiveMode && isPlaying && Math.random() < 0.25) {
         const gray = 160 + Math.floor(Math.random() * 95);
@@ -2404,6 +3102,7 @@ document.addEventListener('mousemove', (e) => {
 });
 
 document.addEventListener('touchmove', (e) => {
+    if (isEnergySaving) return; // 🚀 v2.7: 节能模式不产生粒子
     if (isImmersiveMode && isPlaying) {
         const touch = e.touches[0];
         mouseX = touch.clientX; mouseY = touch.clientY;
@@ -2415,6 +3114,7 @@ document.addEventListener('touchmove', (e) => {
 }, { passive: true });
 
 document.addEventListener('click', (e) => {
+    if (isEnergySaving) return; // 🚀 v2.7: 节能模式跳过涟漪
     if (isImmersiveMode) {
         const ct = e.target && e.target.closest ? e.target : null;
         if (!ct || (!ct.closest('button') && !ct.closest('.progress-area'))) {
@@ -2501,7 +3201,13 @@ function drawFlowingSand() {
 }
 
 // === 🚀 核心重构：全域 60FPS 色音同步视觉主循环 ===
+// 🚀 v2.8.2+: 集成 Page Visibility API 优化
 const renderVisLoop = (timestamp) => {
+    if (visLoopPaused) {
+        // 页面不可见时，大幅降低渲染频率
+        setTimeout(() => requestAnimationFrame(renderVisLoop), 500);
+        return;
+    }
     requestAnimationFrame(renderVisLoop);
 
     // 1. FPS 监测与性能自适应
@@ -2518,17 +3224,19 @@ const renderVisLoop = (timestamp) => {
         }
     }
 
-    const frameInterval = performanceMode ? 1000 / 30 : 1000 / targetFPS;
+    // 🚀 v2.8.2: 画面节能模式（30fps）或原性能模式
+    const isFrameLimited = frameEnergySaving || performanceMode;
+    const frameInterval = isFrameLimited ? 1000 / 30 : 1000 / targetFPS;
     if (timestamp - lastFrameTime < frameInterval) return;
     lastFrameTime = timestamp;
 
     if (!analyser) return;
     analyser.getByteFrequencyData(dataArray);
 
-    // 🚀 v2.6: PiP 微待机省电 — 画中画激活时跳过主窗口所有渲染
-    if (pipWindow && !pipWindow.closed) {
-        if (!isImmersiveMode) return;
-        // 沉浸模式 + PiP：只渲染沉浸舱的视觉内容，主界面由 CSS pip-standby 休眠
+    // 🚀 v2.8: 节能模式 — 激活时跳过全部绘制（含沉浸舱），仅保持 rAF 心跳
+    if (isEnergySaving) {
+        requestAnimationFrame(renderVisLoop);
+        return;
     }
 
     visTime += 0.008;
@@ -2757,34 +3465,110 @@ const _closeModalsSync = (isSwitching = false) => {
     updateFocusContext();
 };
 
+// 🩹 v2.8.8: 专用关闭函数 — 曲库/帮助/文件信息（手柄B键+Esc退出支持）
+function closeCoverLibrary() {
+    const modal = document.getElementById('coverLibraryModal');
+    if (!modal || !modal.classList.contains('open')) return;
+    modal.classList.remove('open');
+    setTimeout(() => updateFocusContext(), 400);
+}
+function closeHelp() {
+    const modal = el.helpModal;
+    if (!modal || !modal.classList.contains('open')) return;
+    modal.classList.remove('open');
+    setTimeout(() => updateFocusContext(), 400);
+}
+function closeFileInfo() {
+    const modal = el.fileInfoModal;
+    if (!modal || !modal.classList.contains('open')) return;
+    modal.classList.remove('open');
+    setTimeout(() => updateFocusContext(), 400);
+}
+
 // 正常关闭弹窗（点击Close、Esc、手柄B）：🚀 彻底恢复原本极具动感的 CSS 淡出和回弹缩小动画！
 const closeAllModals = () => {
     _closeModalsSync(false); // 传参 false：保留完整的过渡动画
 };
 
-// === 🚀 统一弹窗栈关闭管理器 (完美支持 LIFO 后进先出) ===
+// === 🚀 v2.8.4: 统一弹窗栈关闭管理器 (增强版：z-index排序 + 动画感知) ===
 function handleGlobalClose() {
-    // 扫描页面上所有当前处于打开状态的弹窗（包括动态创建和静态隐藏的）
-    const activeModals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => {
-        return m.classList.contains('open') || (m.style.display !== 'none' && document.body.contains(m));
+    // 扫描所有浮窗，包括动态创建的
+    const allModals = Array.from(document.querySelectorAll('.modal-overlay'));
+    const activeModals = allModals.filter(m => {
+        const isOpen = m.classList.contains('open');
+        const isVisible = m.style.display !== 'none' && m.style.visibility !== 'hidden';
+        const inDom = document.body.contains(m);
+        return (isOpen || isVisible) && inDom;
     });
 
-    if (activeModals.length > 0) {
-        // 永远只关闭位于最上层的那个弹窗（数组的最后一项）
-        const topModal = activeModals[activeModals.length - 1];
-        
-        // 区分静态和动态弹窗进行关闭
-        const staticIds = ['playlistModal', 'settingsModal', 'fileInfoModal', 'helpModal', 'coverLibraryModal'];
-        if (staticIds.includes(topModal.id)) {
-            topModal.classList.remove('open');
-        } else {
-            topModal.remove(); // 动态生成的模态框（如统计、专辑详情）直接从DOM移除
-        }
-        
-        updateFocusContext(); // 刷新焦点
-        return true; // 成功关闭了一个弹窗
+    if (activeModals.length === 0) return false;
+
+    // 按 z-index 排序，关闭最上层的
+    activeModals.sort((a, b) => {
+        const zA = parseInt(getComputedStyle(a).zIndex) || 0;
+        const zB = parseInt(getComputedStyle(b).zIndex) || 0;
+        return zB - zA;
+    });
+
+    const topModal = activeModals[0];
+
+    // 🩹 v2.8.8: 按浮窗类型使用专用关闭函数（确保动画+焦点正确）
+    if (topModal.id === 'coverLibraryModal') {
+        closeCoverLibrary();
+    } else if (topModal.id === 'settingsModal') {
+        closeSettings();
+    } else if (topModal.id === 'playlistModal') {
+        closePlaylist();
+    } else if (topModal.id === 'helpModal') {
+        closeHelp();
+    } else if (topModal.id === 'fileInfoModal') {
+        closeFileInfo();
+    } else if (topModal.querySelector('.album-detail-panel')) {
+        // 专辑详情 → 关闭详情面板
+        const detailPanel = topModal.querySelector('.album-detail-panel');
+        const closeBtn = detailPanel.querySelector('#btnCloseAlbumDetail');
+        if (closeBtn) closeBtn.click();
+    } else {
+        // 兜底：移除 open 触发退出动画，延迟清理
+        topModal.classList.remove('open');
+        setTimeout(() => {
+            if (topModal.parentNode && !topModal.classList.contains('open')) {
+                topModal.remove();
+            }
+            updateFocusContext();
+        }, 400);
     }
-    return false; // 当前没有打开的弹窗
+
+    // 更新焦点
+    setTimeout(() => updateFocusContext(), 50);
+
+    return true; // 成功关闭了一个弹窗
+}
+
+// 🩹 v2.8.8: 专用关闭函数 — 设置浮窗
+function closeSettings() {
+    const modal = el.settingsModal;
+    if (!modal || !modal.classList.contains('open')) return;
+    modal.classList.remove('open');
+    setTimeout(() => {
+        if (!modal.classList.contains('open')) {
+            updateFocusContext();
+            saveSettings();
+            showToast("⚙️ 设置已保存");
+        }
+    }, 400);
+}
+
+// 🩹 v2.8.8: 专用关闭函数 — 播放列表浮窗
+function closePlaylist() {
+    const modal = el.playlistModal;
+    if (!modal || !modal.classList.contains('open')) return;
+    modal.classList.remove('open');
+    setTimeout(() => {
+        if (!modal.classList.contains('open')) {
+            updateFocusContext();
+        }
+    }, 400);
 }
 
 // 切换窗口：旧窗口瞬间消失，新窗口优雅回弹展开
@@ -2948,9 +3732,19 @@ function updateModeUI() {
 }
 function updateSettingsUI() {
     const btn = document.getElementById('btnToggleColorMode');
-    btn.textContent = cfg.colorMode ? '关闭取色模式 (Y/C)' : '开启取色模式 (Y/C)';
-    btn.style.color = cfg.colorMode ? 'var(--primary)' : '';
-    btn.style.borderColor = cfg.colorMode ? 'var(--primary)' : '';
+    if (btn) {
+        btn.textContent = cfg.colorMode ? '🎨 关闭取色模式 (Y / C)' : '🎨 开启取色模式 (Y / C)';
+        btn.style.color = cfg.colorMode ? 'var(--primary)' : '';
+        btn.style.borderColor = cfg.colorMode ? 'var(--primary)' : '';
+    }
+    // 🚀 v2.8: 更新取色模式状态标签与预览条
+    const label = document.getElementById('colorModeLabel');
+    if (label) label.textContent = cfg.colorMode ? '✅ 取色模式已激活 · 专辑封面驱动全域色彩' : '☐ 取色模式未激活 · 使用预设主题色';
+    const preview = document.getElementById('colorModePreview');
+    if (preview) {
+        preview.style.display = cfg.colorMode ? 'block' : 'none';
+        if (cfg.colorMode && currentAlbumColor) preview.style.background = `linear-gradient(90deg, ${currentAlbumColor}, ${cfg.defaultColor})`;
+    }
 }
 
 const cyclePlayMode = () => {
@@ -2997,6 +3791,24 @@ document.querySelectorAll('.lrc-align-btn').forEach(btn => {
         applyLrcSettings(); saveSettings();
     };
 });
+
+// 🚀 v2.8.5: 歌词垂直对齐模式按钮
+const btnLrcAlignCenter = document.getElementById('btnLrcAlignCenter');
+const btnLrcAlignTop = document.getElementById('btnLrcAlignTop');
+if (btnLrcAlignCenter) btnLrcAlignCenter.onclick = () => {
+    lyricsAlignMode = 'center';
+    updateLrcAlignUI();
+    saveSettings();
+    syncLyrics(true);
+    showToast('歌词垂直居中');
+};
+if (btnLrcAlignTop) btnLrcAlignTop.onclick = () => {
+    lyricsAlignMode = 'top';
+    updateLrcAlignUI();
+    saveSettings();
+    syncLyrics(true);
+    showToast('歌词偏上显示 (QQ音乐风格)');
+};
 
 // === 🚀 v2.5: 预设主题色统一渲染与多场景同步引擎 ===
 function renderThemePresets() {
@@ -3093,8 +3905,9 @@ function renderEQPanel() {
     const presets = ['flat','pop','rock','classical','vocal','bass','electronic','jazz'];
     presets.forEach(p => {
         const btn = document.createElement('button');
-        btn.className = 'eq-preset-btn';
+        btn.className = 'eq-preset-btn focusable'; // 🔧 v2.8.1 P3: 添加 focusable 类用于手柄导航
         btn.textContent = p.charAt(0).toUpperCase() + p.slice(1);
+        btn.tabIndex = 0; // 🔧 v2.8.1 P3: 添加 tabIndex 用于键盘导航
         btn.onclick = () => {
             setEQPreset(p);
             document.querySelectorAll('.eq-preset-btn').forEach(b => b.classList.remove('active'));
@@ -3176,21 +3989,8 @@ function renderEQPanel() {
         saveSettings();
     };
 
-    // 性能模式
-    const perfDiv = document.createElement('div');
-    perfDiv.className = 'drawer-box';
-    perfDiv.style.marginTop = '20px';
-    perfDiv.innerHTML = `
-        <div class="drawer-title">⚡ 性能模式</div>
-        <button class="btn-glass focusable" id="btnTogglePerf" style="width:100%;justify-content:center;">${performanceMode ? '⚡ 节能模式 (30fps)' : '🚀 全性能模式 (60fps)'}</button>
-    `;
-    eqContainer.appendChild(perfDiv);
-    document.getElementById('btnTogglePerf').onclick = function() {
-        performanceMode = !performanceMode;
-        this.textContent = performanceMode ? '⚡ 节能模式 (30fps)' : '🚀 全性能模式 (60fps)';
-        saveSettings();
-        showToast(performanceMode ? '已切换节能模式 (30fps)' : '已切换全性能模式 (60fps)');
-    };
+    // 🚀 v2.8.2: 性能模式UI已整合到节能板块，此处不再单独显示
+    // (保留兼容映射：旧版 performanceMode 已映射到 cfg.frameEnergyEnabled)
 }
 
 document.getElementById('btnSetBg').onclick = () => document.getElementById('bgInput').click();
@@ -3261,8 +4061,8 @@ function showStatsPanel() {
         listEl.appendChild(item);
     });
 
-    modal.querySelector('#btnCloseStats').onclick = () => modal.remove();
-    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    modal.querySelector('#btnCloseStats').onclick = () => { modal.remove(); modal = null; };
+    modal.onclick = (e) => { if (e.target === modal) { modal.remove(); modal = null; } };
 }
 
 // === 曲库独立面板 (v2.4.0 静态重构) ===
@@ -3326,11 +4126,11 @@ function renderCoverLibGrid(filter = '') {
     grid.innerHTML = '';
 
     if (coverLibSortMode === 'artist') {
-        renderArtistGrid(grid, filter);
+        renderArtistGrid(grid, filter, modal);
     } else if (coverLibSortMode === 'recent') {
-        renderRecentGrid(grid, filter);
+        renderRecentGrid(grid, filter, modal);
     } else {
-        renderAlbumGrid(grid, filter);
+        renderAlbumGrid(grid, filter, modal);
     }
 }
 
@@ -3349,7 +4149,7 @@ function renderGridChunked(grid, entries, createCardFn) {
     requestAnimationFrame(renderNextChunk);
 }
 
-function renderAlbumGrid(grid, filter) {
+function renderAlbumGrid(grid, filter, modal) {
     const groups = new Map();
     musicLibrary.forEach((s, i) => {
         const key = s.art || '__noart__';
@@ -3371,7 +4171,7 @@ function renderAlbumGrid(grid, filter) {
     });
 }
 
-function renderArtistGrid(grid, filter) {
+function renderArtistGrid(grid, filter, modal) {
     const groups = new Map();
     musicLibrary.forEach((s, i) => {
         const key = s.artist;
@@ -3393,7 +4193,7 @@ function renderArtistGrid(grid, filter) {
     });
 }
 
-function renderRecentGrid(grid, filter) {
+function renderRecentGrid(grid, filter, modal) {
     const entries = musicLibrary.map((s, i) => ({
         art: s.art, album: s.album || '未知', artist: s.artist,
         title: s.title, songs: [i], firstIdx: i, isSingle: true
@@ -3448,7 +4248,8 @@ function createCoverCard(group, idx, type) {
 // 专辑详情面板 (🚀 v2.3.2 完美手柄适配版)
 function showAlbumDetail(group, parentModal) {
     const detailModal = document.createElement('div');
-    detailModal.className = 'modal-overlay open';
+    // 🔧 v2.8.1 P2: 不立即添加 open 类，使用双重 rAF 确保 CSS 动画触发
+    detailModal.className = 'modal-overlay';
     detailModal.style.zIndex = '1001';
 
     // 🚀 核心改动 1：为操作按钮加上 focusable 类名与 tabindex="0"
@@ -3473,6 +4274,13 @@ function showAlbumDetail(group, parentModal) {
     `;
     document.body.appendChild(detailModal);
 
+    // 🔧 v2.8.1 P2: 使用双重 requestAnimationFrame 确保浏览器渲染初始状态后再触发动画
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            detailModal.classList.add('open');
+        });
+    });
+
     // 🚀 核心改动 2：立即更新焦点上下文，让手柄焦点瞬间"吸附"进入详情弹窗中
     updateFocusContext();
 
@@ -3494,9 +4302,9 @@ function showAlbumDetail(group, parentModal) {
         
         // 鼠标/手柄确认点击播放
         track.onclick = () => {
+            // 🔧 v2.8.4: 使用 closeAllModals 替代直接 remove
             playAudio(songIdx);
-            detailModal.remove();
-            parentModal.remove();
+            closeAllModals();
         };
         tracksEl.appendChild(track);
     });
@@ -3510,24 +4318,31 @@ function showAlbumDetail(group, parentModal) {
         isRepeatOne = false;
         updateModeUI(); 
         saveSettings();
-        playAudio(0);
-        renderPlaylist();
-        detailModal.remove();
-        parentModal.remove();
+        // 🔧 v2.8.4: 使用 safeTransition 优雅关闭弹窗再播放
+        safeTransition(() => {
+            playAudio(0);
+            renderPlaylist();
+        });
         showToast(`🎵 正在播放专辑: ${group.album || '未知'}`);
     };
 
     // 关闭详情（🚀 核心改动 4：关闭时，必须重新扫描，让焦点优雅退回到曲库面板中）
-    detailModal.querySelector('#btnCloseAlbumDetail').onclick = () => {
-        detailModal.remove();
-        updateFocusContext(); 
+    const closeDetail = () => {
+        detailModal.classList.remove('open');
+        setTimeout(() => {
+            if (detailModal.parentNode) {
+                detailModal.remove();
+            }
+            // 🔧 v2.8.4: 确保父弹窗恢复焦点上下文
+            if (parentModal && parentModal.classList.contains('open')) {
+                updateFocusContext();
+            }
+        }, 400);
     };
+    detailModal.querySelector('#btnCloseAlbumDetail').onclick = closeDetail;
     
     detailModal.onclick = (e) => { 
-        if (e.target === detailModal) {
-            detailModal.remove();
-            updateFocusContext(); 
-        }
+        if (e.target === detailModal) closeDetail();
     };
 }
 
@@ -3540,11 +4355,46 @@ const updateFocusContext = () => {
     focusableElements.forEach(el => el.classList.remove('gamepad-focus'));
     currentFocusIndex = -1;
 
+    // 🚀 v2.8.4: 按 z-index 优先级检测最上层浮窗
+    const allModals = Array.from(document.querySelectorAll('.modal-overlay'));
+    const activeModals = allModals.filter(m => {
+        return m.classList.contains('open') && document.body.contains(m);
+    }).sort((a, b) => {
+        const zA = parseInt(getComputedStyle(a).zIndex) || 0;
+        const zB = parseInt(getComputedStyle(b).zIndex) || 0;
+        return zB - zA;
+    });
+
+    // 获取最上层浮窗
+    const topModal = activeModals[0];
+
     // 🚀 核心：检测动态生成的专辑详情面板与静态曲库弹窗
     const albumDetailPanel = document.querySelector('.album-detail-panel');
     const coverLibModal = document.getElementById('coverLibraryModal');
 
-    if (albumDetailPanel) {
+    if (topModal) {
+        // 🩹 v2.8.8: 为每个浮窗类型收集所有可交互元素（含无 .focusable 类的原生元素）
+        if (topModal.id === 'settingsModal') {
+            focusableElements = Array.from(topModal.querySelectorAll(
+                '.focusable, button, input[type="range"], input[type="checkbox"], select, [tabindex="0"]'
+            ));
+        } else if (topModal.id === 'playlistModal') {
+            const container = currentViewMode === 'coverwall' ? el.coverWallContainer : el.plContainer;
+            const modalFocus = Array.from(topModal.querySelectorAll('.focusable, input[type="text"], button'));
+            const listFocus = Array.from(container.querySelectorAll('.focusable'));
+            focusableElements = [...modalFocus, ...listFocus];
+        } else if (topModal.id === 'coverLibraryModal') {
+            focusableElements = Array.from(topModal.querySelectorAll('.focusable, .tab-button, .album-card'));
+        } else {
+            // 其它浮窗：通用 .focusable 查询
+            focusableElements = Array.from(topModal.querySelectorAll('.focusable'));
+        }
+
+        // 如果没有 focusable 元素，尝试聚焦弹窗内容
+        if (focusableElements.length === 0 && topModal.querySelector('.modal-content')) {
+            focusableElements = [topModal.querySelector('.modal-content')];
+        }
+    } else if (albumDetailPanel) {
         // 如果专辑详情打开，焦点锁定在详情内的按钮和歌曲行上
         focusableElements = Array.from(albumDetailPanel.querySelectorAll('.focusable'));
     } else if (coverLibModal && coverLibModal.classList.contains('open')) {
@@ -3590,6 +4440,10 @@ const moveFocus2D = (dir) => {
         if (idx === currentFocusIndex) return;
 
         const targetRect = targetEl.getBoundingClientRect();
+
+        // 🩹 v2.8.8: 跳过不可见元素（size=0 或 display:none）
+        if (targetRect.width === 0 || targetRect.height === 0) return;
+
         const tarX = targetRect.left + targetRect.width / 2;
         const tarY = targetRect.top + targetRect.height / 2;
 
@@ -3606,13 +4460,25 @@ const moveFocus2D = (dir) => {
         }
         if (isOpposite) return;
 
-        // 二维欧式几何加权评分：主要方向距离 + 垂直偏离惩罚
+        // 🩹 v2.8.8: 增强二维加权评分 + 可见性惩罚 + 元素大小奖励
         let score = 0;
         if (dir === 'left' || dir === 'right') {
             score = Math.abs(dx) + Math.abs(dy) * 2.5;
         } else {
             score = Math.abs(dy) + Math.abs(dx) * 2.5;
         }
+
+        // 🩹 视口外惩罚：目标元素在视口外 → 大幅增加评分，基本排除
+        const viewH = window.innerHeight;
+        const viewW = window.innerWidth;
+        if (targetRect.top < 0 || targetRect.bottom > viewH ||
+            targetRect.left < 0 || targetRect.right > viewW) {
+            score += 10000;
+        }
+
+        // 🩹 元素大小奖励：优先导航到更大的交互元素（按钮 > 标签）
+        const area = targetRect.width * targetRect.height;
+        score -= Math.log(area) * 0.5;
 
         if (score < minScore) {
             minScore = score;
@@ -3650,7 +4516,23 @@ const moveFocus = (direction) => {
 
 const activateFocus = () => {
     if (currentFocusIndex >= 0 && focusableElements[currentFocusIndex]) {
-        focusableElements[currentFocusIndex].click();
+        // 🔧 v2.8.1 P3: 增强手柄确认逻辑，处理更多元素类型
+        const focused = focusableElements[currentFocusIndex];
+        if (focused.classList.contains('album-detail-track')) {
+            // 专辑详情曲目：播放歌曲并关闭详情面板
+            const detailPanel = document.querySelector('.album-detail-panel');
+            if (detailPanel) {
+                const trackIdx = Array.from(detailPanel.querySelectorAll('.album-detail-track')).indexOf(focused);
+                if (trackIdx >= 0) {
+                    const trackEls = detailPanel.querySelectorAll('.album-detail-track');
+                    trackEls[trackIdx].click();
+                }
+            }
+        } else if (focused.classList.contains('eq-preset-btn')) {
+            focused.click();
+        } else {
+            focused.click();
+        }
     } else {
         togglePlay();
     }
@@ -3660,7 +4542,15 @@ updateFocusContext();
 
 // === 键盘映射 ===
 window.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+    // 🚀 v2.8: 快捷键优先处理（无视input聚焦限制）
+    if (e.ctrlKey && e.key === 'o') { e.preventDefault(); el.btnLoad.click(); return; }
+    if (e.shiftKey && e.key === 'Escape') { e.preventDefault(); closeAllModals(); if (isImmersiveMode) toggleImmersiveMode(); return; }
+    
+    // 输入框内忽略大部分快捷键
+    if ((e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && e.target.type !== 'range') {
+        if (e.key !== 'Escape') return;
+    }
+    
     switch(e.key.toLowerCase()) {
         case ' ': case 'enter': e.preventDefault(); activateFocus(); break;
         
@@ -3675,6 +4565,10 @@ window.addEventListener('keydown', (e) => {
         case 'i': toggleImmersiveMode(); break;
         case 'm': case 'r': cyclePlayMode(); break;
         case 'c': case 'y': toggleColorMode(); break;
+        // 🚀 v2.8: U = 收藏/取消收藏, Shift+F = 全屏
+        case 'u': e.preventDefault(); toggleFavorite(); break;
+        case 'f': e.shiftKey ? toggleFullscreen() : (e.preventDefault(), toggleFavorite()); break;
+        // 🚀 v2.8: D = 深色模式切换
         case 'd': toggleDarkMode(); break;
         case 'l': el.btnToggleLrc.click(); break;
         case 'p':
@@ -3683,8 +4577,15 @@ window.addEventListener('keydown', (e) => {
             currentViewMode = 'list';
             renderPlaylist();
             break;
-        case 'f': toggleFullscreen(); break;
-        case 't': showStatsPanel(); break;
+        // 🚀 v2.8: / 聚焦播放列表搜索框
+        case '/':
+            if (el.playlistModal.classList.contains('open')) {
+                e.preventDefault();
+                const s = document.getElementById('searchInput');
+                if (s) { s.focus(); s.select(); }
+            }
+            break;
+        case 't': e.altKey ? (e.preventDefault(), showSleepQuickMenu()) : showStatsPanel(); break;
         case 'g': showCoverLibrary(); break;
         case 'q': togglePip(); break;
         case '?':
@@ -3697,7 +4598,6 @@ window.addEventListener('keydown', (e) => {
             if (document.fullscreenElement) {
                 document.exitFullscreen();
             } else {
-                // 🚀 优先尝试关闭最上层弹窗，如果没有弹窗打开，才执行退出沉浸模式
                 const closed = handleGlobalClose();
                 if (!closed && isImmersiveMode) {
                     toggleImmersiveMode();
@@ -3753,8 +4653,63 @@ document.addEventListener('touchend', (e) => {
 });
 
 // === 手柄映射 ===
-window.addEventListener("gamepadconnected", () => { gamepadConnected = true; el.padStatus.innerHTML = `🎮 手柄已连接 | 使用摇杆导航`; el.padStatus.style.color = 'var(--primary)'; });
-window.addEventListener("gamepaddisconnected", () => { gamepadConnected = false; el.padStatus.innerHTML = `⌨️ 等待手柄接入...`; el.padStatus.style.color = 'var(--text-sub)'; });
+// 🚀 v2.8: 手柄按键指示器注入/清除
+// 🩹 v2.8.8: 手柄按键指示器 — 映射更新（X=播放/暂停，Y=沉浸模式，LT/RT=快退/快进）
+function injectGamepadHints() {
+    document.body.classList.add('gamepad-connected');
+    const hints = [
+        { id: 'btnPlay',      tag: 'ⓐ',    cls: 'pad-a',  tip: '确认/播放暂停' },
+        { id: 'imm-btnPlay',  tag: 'ⓐ',    cls: 'pad-a',  tip: '确认/播放暂停' },
+        { id: 'btnPrev',      tag: 'LB',    cls: 'pad-lb', tip: '上一首/左翻页' },
+        { id: 'imm-btnPrev',  tag: 'LB',    cls: 'pad-lb', tip: '上一首' },
+        { id: 'btnNext',      tag: 'RB',    cls: 'pad-rb', tip: '下一首/右翻页' },
+        { id: 'imm-btnNext',  tag: 'RB',    cls: 'pad-rb', tip: '下一首' },
+        { id: 'btnSettings',  tag: 'Menu',  cls: 'pad-b',  tip: '设置' },
+    ];
+    hints.forEach(h => {
+        const el = document.getElementById(h.id);
+        if (!el || el.querySelector('.gamepad-badge')) return;
+        el.style.position = el.style.position || 'relative';
+        const badge = document.createElement('span');
+        badge.className = `gamepad-badge ${h.cls}`;
+        badge.textContent = h.tag;
+        badge.title = h.tip;
+        el.appendChild(badge);
+    });
+    // 设置弹窗内的关闭按钮标注
+    ['btnCloseSettings','btnCloseCoverLib','btnCloseList','btnCloseStats',
+     'btnCloseAlbumDetail','btnCloseFileInfo','btnCloseHelp'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn && !btn.querySelector('.gamepad-badge')) {
+            btn.style.position = 'relative';
+            const b = document.createElement('span');
+            b.className = 'gamepad-badge pad-b';
+            b.textContent = 'ⓑ';
+            b.title = '关闭';
+            btn.appendChild(b);
+        }
+    });
+}
+function removeGamepadHints() {
+    document.body.classList.remove('gamepad-connected');
+    document.querySelectorAll('.gamepad-badge').forEach(b => b.remove());
+}
+window.addEventListener("gamepadconnected", () => {
+    gamepadConnected = true;
+    el.padStatus.innerHTML = `🎮 手柄已连接 | 摇杆导航 · ⓐ确认 · ⓑ返回`;
+    el.padStatus.style.color = 'var(--primary)';
+    injectGamepadHints();
+});
+window.addEventListener("gamepaddisconnected", () => {
+    gamepadConnected = false;
+    el.padStatus.innerHTML = `⌨️ 等待手柄接入...`;
+    el.padStatus.style.color = 'var(--text-sub)';
+    removeGamepadHints();
+});
+
+// 🩹 v2.8.8: 滑块微调模式状态
+let sliderFineMode = false;
+let currentSlider = null;
 
 const pollGamepad = () => {
     if (!gamepadConnected) { requestAnimationFrame(pollGamepad); return; }
@@ -3762,29 +4717,122 @@ const pollGamepad = () => {
     if (pad) {
         const btns = pad.buttons.map(b => b.pressed);
 
-        if (btns[0] && !prevPadBtns[0]) activateFocus();
-        // 🚀 手柄 B 键（退回键）一键适配全域弹窗关闭
+        // --- B 键（button 1）：最高优先级 — 全域退出/关闭 ---
         if (btns[1] && !prevPadBtns[1]) {
+            // 如果在滑块微调模式，先退出微调
+            if (sliderFineMode) {
+                sliderFineMode = false;
+                currentSlider = null;
+                showToast("🎯 退出滑块微调");
+                updateFocusContext();
+                prevPadBtns = btns.slice();
+                return;
+            }
             const closed = handleGlobalClose();
             if (!closed && isImmersiveMode) {
                 toggleImmersiveMode();
             }
         }
-        if (btns[2] && !prevPadBtns[2]) cyclePlayMode();
-        if (btns[3] && !prevPadBtns[3]) toggleColorMode();
-        if (btns[4] && !prevPadBtns[4]) goPrev();
-        if (btns[5] && !prevPadBtns[5]) goNext();
+
+        // --- A 键（button 0）：元素感知确认/激活 ---
+        if (btns[0] && !prevPadBtns[0]) {
+            // 如果已在微调模式，A键不做任何事（方向键负责调整）
+            if (sliderFineMode) {
+                prevPadBtns = btns.slice();
+                return;
+            }
+            // 🩹 v2.8.8: 元素类型感知 — 滑块→微调、复选框→切换、下拉→聚焦
+            if (currentFocusIndex >= 0 && focusableElements[currentFocusIndex]) {
+                const target = focusableElements[currentFocusIndex];
+                if (target.type === 'range') {
+                    // 滑块 → 进入微调模式
+                    sliderFineMode = true;
+                    currentSlider = target;
+                    showToast("🎯 滑块微调模式 · ⬅➡调整 · Ⓑ退出");
+                } else if (target.type === 'checkbox') {
+                    target.checked = !target.checked;
+                    target.dispatchEvent(new Event('change', { bubbles: true }));
+                } else if (target.tagName === 'SELECT') {
+                    target.focus();
+                } else {
+                    activateFocus();
+                }
+            } else {
+                activateFocus();
+            }
+        }
+
+        // 🩹 v2.8.8: 滑块微调模式 — 方向键调整值
+        if (sliderFineMode && currentSlider) {
+            const step = parseFloat(currentSlider.step) || 1;
+            const min = parseFloat(currentSlider.min) || 0;
+            const max = parseFloat(currentSlider.max) || 100;
+
+            const padLeft = btns[14] || (pad.axes[0] < -0.5 && Date.now() - lastNavTime > 200);
+            const padRight = btns[15] || (pad.axes[0] > 0.5 && Date.now() - lastNavTime > 200);
+
+            if (padLeft && !prevPadBtns[14] && !(pad.axes[0] < -0.5 && prevPadAxes && prevPadAxes[0] < -0.5)) {
+                currentSlider.value = Math.max(min, parseFloat(currentSlider.value) - step);
+                currentSlider.dispatchEvent(new Event('input', { bubbles: true }));
+                lastNavTime = Date.now();
+            }
+            if (padRight && !prevPadBtns[15] && !(pad.axes[0] > 0.5 && prevPadAxes && prevPadAxes[0] > 0.5)) {
+                currentSlider.value = Math.min(max, parseFloat(currentSlider.value) + step);
+                currentSlider.dispatchEvent(new Event('input', { bubbles: true }));
+                lastNavTime = Date.now();
+            }
+
+            prevPadBtns = btns.slice();
+            prevPadAxes = Array.from(pad.axes);
+            return; // 微调模式下跳过后续焦点导航
+        }
+
+        // 🩹 v2.8.8: X 键 = 播放/暂停（全局），Y 键 = 切换沉浸模式
+        if (btns[2] && !prevPadBtns[2]) togglePlay();
+        if (btns[3] && !prevPadBtns[3]) toggleImmersiveMode();
+
+        // 🩹 v2.8.8: LB/RB — 设置浮窗内切换选项卡，否则切换歌曲
+        if (btns[4] && !prevPadBtns[4]) {
+            if (el.settingsModal.classList.contains('open')) {
+                switchSettingsTab(-1);
+            } else {
+                goPrev();
+            }
+        }
+        if (btns[5] && !prevPadBtns[5]) {
+            if (el.settingsModal.classList.contains('open')) {
+                switchSettingsTab(1);
+            } else {
+                goNext();
+            }
+        }
+
+        // 🩹 v2.8.8: LT/RT 触发键 — 快退/快进 5 秒
+        if (btns[6] && !prevPadBtns[6]) {
+            audio.currentTime = Math.max(0, audio.currentTime - 5);
+            showToast("⏪ 快退 5秒");
+        }
+        if (btns[7] && !prevPadBtns[7]) {
+            audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
+            showToast("⏩ 快进 5秒");
+        }
+
+        // Select/Start 键保持原有功能
         if (btns[8] && !prevPadBtns[8]) toggleFullscreen();
         if (btns[9] && !prevPadBtns[9]) { closeAllModals(); el.settingsModal.classList.add('open'); renderThemePresets(); renderEQPanel(); updateFocusContext(); }
 
-        if (pad.buttons[6].pressed) adjustVolume(-0.02);
-        if (pad.buttons[7].pressed) adjustVolume(0.02);
+        // 🩹 v2.8.8: L3（左摇杆点击）— 切换焦点模式
+        if (btns[10] && !prevPadBtns[10]) {
+            toggleFocusMode();
+        }
 
+        // D-Pad 方向键
         if (btns[12] && !prevPadBtns[12]) { moveFocus2D('up'); }
         if (btns[13] && !prevPadBtns[13]) { moveFocus2D('down'); }
         if (btns[14] && !prevPadBtns[14]) { moveFocus2D('left'); }
         if (btns[15] && !prevPadBtns[15]) { moveFocus2D('right'); }
 
+        // 左摇杆导航
         let stickX = pad.axes[0], stickY = pad.axes[1];
         if (Date.now() - lastNavTime > 200) {
             if (stickY < -0.5) { moveFocus2D('up'); lastNavTime = Date.now(); }
@@ -3793,10 +4841,29 @@ const pollGamepad = () => {
             else if (stickX > 0.5) { moveFocus2D('right'); lastNavTime = Date.now(); }
         }
 
-        prevPadBtns = btns;
+        prevPadBtns = btns.slice();
+        prevPadAxes = Array.from(pad.axes);
     }
     requestAnimationFrame(pollGamepad);
 };
+
+// 🩹 v2.8.8: 辅助函数 — 切换设置浮窗选项卡
+function switchSettingsTab(direction) {
+    const tabs = document.querySelectorAll('.settings-tab');
+    const activeTab = document.querySelector('.settings-tab.active');
+    if (!tabs.length || !activeTab) return;
+    const currentIdx = Array.from(tabs).indexOf(activeTab);
+    const newIdx = (currentIdx + direction + tabs.length) % tabs.length;
+    tabs[newIdx].click();
+    showToast(`📑 ${tabs[newIdx].textContent.trim()}`);
+}
+
+// 🩹 v2.8.8: 辅助函数 — 切换焦点模式（正常 ↔ 微调优先）
+let focusMode = 'normal';
+function toggleFocusMode() {
+    focusMode = focusMode === 'normal' ? 'fine' : 'normal';
+    showToast(`🎯 焦点模式: ${focusMode === 'normal' ? '正常导航' : '微调优先'}`);
+}
 requestAnimationFrame(pollGamepad);
 
 // === 错误边界与日志导出 ===
@@ -3841,7 +4908,8 @@ window.addEventListener('load', async () => {
     updateEmptyState();
     updateDarkModeUI();
     applyLrcSettings();
-    setupCrossfade();
+    initCrossfadeEngine();   // 🔥 v2.8.9: 初始化交叉淡变引擎
+    cfSetupScanner();        // 🔥 v2.8.9: 交叉淡变扫描器
     updateFavQuickBtn();
 
     // 从localStorage恢复错误日志到内存缓存
@@ -3876,9 +4944,8 @@ window.addEventListener('load', async () => {
     const btnExportJSON = document.getElementById('btnExportJSON');
     if (btnExportJSON) btnExportJSON.onclick = () => exportPlaylist('json');
 
-    // 画中画按钮 (设置面板内) - 注意: btnCoverLibrary/btnShowStats/btnFavQuick/btnPipQuick 已在模态与UI控制段绑定
-    const btnTogglePip = document.getElementById('btnTogglePip');
-    if (btnTogglePip) btnTogglePip.onclick = togglePip;
+    // 🚀 v2.8.2: 设置面板不再包含画中画按钮（仅保留主界面播放器入口）
+    // (原 btnTogglePip 绑定已移除)
 
     // 歌词偏移按钮
     const btnLrcOffsetMinus = document.getElementById('btnLrcOffsetMinus');
@@ -3903,4 +4970,106 @@ window.addEventListener('load', async () => {
     if (btnSleep60) btnSleep60.onclick = () => setSleepTimer(60);
     const btnSleepCancel = document.getElementById('btnSleepCancel');
     if (btnSleepCancel) btnSleepCancel.onclick = () => setSleepTimer(0);
+
+    // 🚀 v2.8.2: 节能模式板块事件绑定
+
+    // 一键节能开关
+    const oneClickToggle = document.getElementById('oneClickEnergyToggle');
+    if (oneClickToggle) {
+        oneClickToggle.addEventListener('change', (e) => {
+            cfg.oneClickEnergyEnabled = e.target.checked;
+            oneClickEnergySaving = e.target.checked;
+            if (e.target.checked) {
+                enterEnergySaving(EnergyMode.ONE_CLICK);
+            } else {
+                exitEnergySaving(EnergyMode.ONE_CLICK);
+                showToast("🔋 一键节能已关闭", "⚡");
+            }
+            saveSettings();
+        });
+    }
+
+    // 画面节能开关
+    const frameToggle = document.getElementById('frameEnergyToggle');
+    if (frameToggle) {
+        frameToggle.addEventListener('change', (e) => {
+            cfg.frameEnergyEnabled = e.target.checked;
+            frameEnergySaving = e.target.checked;
+            // 同步兼容旧版 performanceMode
+            performanceMode = e.target.checked;
+            showToast(frameEnergySaving ? "🎬 画面节能已开启 (30fps)" : "🎬 画面节能已关闭 (60fps)", "⚡");
+            saveSettings();
+        });
+    }
+
+    // 临时节能开关
+    const pipToggle = document.getElementById('pipEnergyToggle');
+    if (pipToggle) {
+        pipToggle.addEventListener('change', (e) => {
+            cfg.pipEnergyEnabled = e.target.checked;
+            showToast(cfg.pipEnergyEnabled ? "📺 临时节能已开启" : "📺 临时节能已关闭", "⚡");
+            saveSettings();
+        });
+    }
+
+    // 🔧 v2.8.4: visibilitychange — 标签页隐藏时自动节能 + 暂停渲染
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            // 🚀 v2.8.2+: 暂停高频渲染循环
+            visLoopPaused = true;
+            if (lrcTimer) clearInterval(lrcTimer);
+
+            // 如果画中画运行中，进入可见性节能
+            if (pipWindow && !pipWindow.closed) {
+                enterEnergySaving(EnergyMode.VISIBILITY);
+            }
+        } else {
+            // 🚀 v2.8.2+: 恢复渲染
+            visLoopPaused = false;
+
+            // 🔧 v2.8.4: 只退出可见性节能，保留其他模式
+            exitEnergySaving(EnergyMode.VISIBILITY);
+
+            // 如果完全没有节能需求，恢复渲染
+            if (!shouldBeEnergySaving() && analyser) {
+                requestAnimationFrame(renderVisLoop);
+            }
+        }
+    });
+
+    // 🚀 v2.7: PWA beforeinstallprompt — 监听可安装事件
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        // 在导航栏显示安装按钮
+        const existingBtn = document.getElementById('btnInstallPwa');
+        if (existingBtn) existingBtn.remove();
+        const btn = document.createElement('button');
+        btn.id = 'btnInstallPwa';
+        btn.className = 'btn-glass';
+        btn.textContent = '📦 安装';
+        btn.title = '安装到桌面';
+        btn.onclick = async () => {
+            if (!deferredInstallPrompt) return;
+            deferredInstallPrompt.prompt();
+            const { outcome } = await deferredInstallPrompt.userChoice;
+            if (outcome === 'accepted') showToast('✅ 应用已添加到桌面');
+            deferredInstallPrompt = null;
+            btn.remove();
+        };
+        const navActions = document.querySelector('.nav-actions');
+        if (navActions) navActions.appendChild(btn);
+    });
+
+    // 🚀 v2.8.8: 窗口 resize 时重新计算歌词居中
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (parsedLyrics.length && el.lrcPanel.style.display !== 'none') {
+                syncLyrics(true);  // 强制重新计算居中位置
+            }
+        }, 150);  // 150ms 防抖
+    });
 });

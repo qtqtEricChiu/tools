@@ -2,6 +2,418 @@
 
 ---
 
+## v2.8.9 (2026-06-03)
+
+### 🔥 LRC 歌词解析引擎全面重写
+
+**根因**：单语 LRC 被误识别为双语（isTranslationLine 长度规则假阳性、元数据行漏跳过），双语 LRC 存在漏识别（pendingOriginal 已翻译后后续行被静默丢弃）。
+
+**修复方案**：
+- **预扫描中文计数**：全文件 < 3 个中文字 → 纯单语守卫，跳过所有翻译检测
+- **元数据行检测扩展**：新增英文制作信息（Lyrics by / Composed by / Arranged by / Produced by）、版权行（TME享有 / 著作权 / Copyright）、创作信息行（0~10s 内含 ` - ` 模式）
+- **移除粗糙的长度规则**（Rule 4：txt.length < original.length * 0.5）— 主要假阳性来源
+- **pendingOrig 生命周期修正**：原文被赋翻译后立即 `pendingOrig = null`，后续行作为新原文
+- **双重保护**：翻译行检测时若 `pendingOrig.translation` 已存在 → 强制 `pendingOrig = null`
+
+### 🔥 Crossfade 引擎 — Web Audio API 全面重写
+
+**旧架构**：rAF + `audio.volume` 指数动画 → 帧精度 ±16ms，可能掉帧
+
+**新架构**（Chrome 148）：
+- **固定双槽位 A/B**（`audio` + `cfAudioB`）— 永不交换元素
+- **AudioContext lazy-init**（首次需要时创建，符合自动播放策略）
+- **GainNode 精确定时斜坡**：`gain.exponentialRampToValueAtTime()` — 亚毫秒精度，零掉帧
+- **提前 50% 预加载**：`setTimeout` 在当前歌曲 50% 时预加载被动槽
+- **Semaphore 防重叠**：`cfTransitionId` 事务版本号 + `cfAirLocked` 门禁锁
+- **3 秒超时回退**：预加载超时自动降级为 `goNext()` 直接切歌
+
+---
+
+## v2.8.8 (2026-06-03)
+
+### 🎯 歌词垂直居中修复
+
+**根因分析**：4个独立根因导致歌词定位偏移——(1) CSS `padding:50%` 基于宽度而非高度；(2) `offsetTop`/`clientHeight` 在CSS过渡期间值不稳定；(3) `transform:scale(1.05)` 未纳入视觉高度计算；(4) 未强制重排就读取布局属性。
+
+**修复方案**：
+- 强制重排 (`void line.offsetHeight`) 确保读取最新布局
+- 使用 `getBoundingClientRect()` 替代 `offsetTop`/`clientHeight`
+- 纳入 `scale(1.05)` 因子修正视觉高度
+- CSS `.lrc-viewport` padding 从 `50%` 改为 `20px`（固定值）
+- 添加 `window resize` 监听器（150ms防抖），窗口变化时重新居中
+
+### 🔗 双语歌词解析增强
+
+**问题**：链式LRC格式中，翻译行与下一句原文同时间戳，原有分组算法将翻译和原文放入同一 group，导致配对错误。
+
+**修复**：移除按时间戳分组逻辑，改为逐行处理。新增 `isTranslationLine()` 启发式检测函数（4条规则）：
+1. 时间戳差 < 0.1s → 翻译
+2. 本行含中文，上行不含 → 翻译
+3. 纯中文 vs 纯ASCII 组合 → 强信号
+4. 长度 < 上行50% → 翻译
+
+### 🎨 下一句歌词中间模糊厚度
+
+- `.lrc-line.active + .lrc-line` 模糊值：`blur(0px) !important` → `blur(1px)`
+- 视觉层次：当前行(0px) > 下一句(1px) > 其他行(2px)
+
+### 🎮 B键高优先级退出所有浮窗
+
+- 新增 `closeSettings()` / `closePlaylist()` / `closeCoverLibrary()` / `closeHelp()` / `closeFileInfo()` 专用关闭函数
+- `handleGlobalClose()` 按浮窗ID路由到对应关闭函数（带动画+焦点恢复+设置保存）
+- `pollGamepad` 中 B键最高优先级拦截，先于所有其他逻辑
+
+### 🕹️ 手柄适配逻辑全面重写
+
+**焦点系统**：
+- `updateFocusContext()` 按浮窗类型收集所有可交互元素（含 `input[range]`/`checkbox`/`select`）
+- `moveFocus2D()` 增强：跳过不可见元素、视口外惩罚(+10000)、元素面积奖励
+
+**按钮映射重写**：
+| 按钮 | v2.8.7 | v2.8.8 |
+|------|--------|--------|
+| A | 确认/播放 | 元素感知确认（滑块→微调、复选框→切换、下拉→聚焦） |
+| B | 退出 | 退出（含滑块微调退出） |
+| X | 收藏 | 播放/暂停（全局） |
+| Y | 循环模式 | 沉浸模式切换 |
+| LB | 上一首 | 设置中切换选项卡 / 上一首 |
+| RB | 下一首 | 设置中切换选项卡 / 下一首 |
+| LT | 降低音量 | 快退 5秒 |
+| RT | 增加音量 | 快进 5秒 |
+| L3 | — | 焦点模式切换 |
+
+- 新增滑块微调模式：焦点在 `range` 输入框上按A进微调，方向键调整值，B退出
+
+### 🎨 沉浸模式修复
+
+- `.imm-wrapper` 添加 `background:transparent` + `isolation:auto` 修复 backdrop-filter 模糊被阻断
+- 非双语歌词沉浸模式显示：当前句原文 + 下一句原文
+
+---
+
+## v2.8.7 (2026-06-03)
+
+### 🔧 空翻译检测 — 避免误用下句原文
+
+**根因**：v2.8.6 链式解析中 `group.entries.filter()` 会过滤空字符串，如果同名时间戳首行为空（翻译空置），过滤后的 `texts[0]` 变成了本句原文而非上一句翻译，导致将"下一句原文"错误赋值给上句的 `translation`。
+
+**修复**：在过滤前增加 `hasTranslation` 检查（`group.entries.length > 1 && group.entries[0] && group.entries[0].trim()`），只有翻译非空时才赋值。翻译空置时 `isBilingual` 保持 `false`，歌词以单行显示。
+
+### 📝 翻译行字号缩小
+
+- 激活翻译行：`font-size: 0.95em` → `0.75em`，视觉层次明显（原文/翻译分层清晰）
+
+### 📺 PiP 歌词回退
+
+- `pipCurrLine` = 当前句原文，`pipNextLine` = 下一句原文（不显示翻译）
+- 与沉浸舱行为保持一致
+
+### 🎵 Crossfade 引擎系统性重写
+
+**问题诊断**：
+1. `audio.src = nextAudio.src` 导致音频重新加载，丢失淡入效果
+2. `isFading` 布尔锁在多个异步路径中容易遗漏重置
+3. `setInterval` + 固定步长导致音质步进感
+4. `playing` 事件触发时机不稳定
+
+**v2.8.7 新架构**：
+
+| 组件 | 变更 |
+|------|------|
+| **状态机** | `CrossfadeState { IDLE, PRELOADING, FADING, COMPLETED }` 替代 `isFading` 布尔锁 |
+| **音频池** | `audioPool = [audio, nextAudio]`，Crossfade 完成后 swap 活跃元素 |
+| **rAF 动画** | `performCrossfade()` 使用 `requestAnimationFrame` + `performance.now()` 驱动 |
+| **指数曲线** | 淡入淡出使用 `Math.pow(progress, 2)` 替代线性，人耳感知更自然 |
+| **async/await** | `triggerCrossfadeV2()` 显式 `await nextAudio.load()` 预加载 |
+| **旧版删除** | 移除 `triggerFadeOutLegacy()` 和 `triggerFadeInLegacy()`，降级走 `goNext()` |
+
+**关键修复点**：
+- `finishCrossfadeV2()`: 直接 swap audio 元素而非复制 src
+- `playAudio()`: 手动切歌时取消 rAF + 停止池中音频 + 重置 `crossfadeState`
+- `goNext()`: 用 `crossfadeState !== IDLE` 替代 `isFading` 检查
+
+### ™️ 其他
+
+- **版本号更新**：`index.html`、`app.js`、版权区域统一为 v2.8.7
+
+---
+
+## v2.8.6 (2026-06-03)
+
+### 🔧 双语LRC链式解析 — 专项修复
+
+**根因**：v2.8.5 的 Map 分组算法将同时间戳的两行视为"同一句的原文+翻译"，但实际 LRC 格式是**链式结构**——同时间戳第一行 = **上一句原文的翻译**，第二行 = **本句原文**。导致"上一句翻译被合并到下一句原文"的配对错误。
+
+**修复**：`parseLyricText()` 完全重写为三阶段链式解析：
+
+1. **顺序分组**：按时间戳分组，保持同时间戳内行序
+2. **元数据过滤**：`isMetaLine()` 识别制作信息行（曲、编曲、词、TME版权 等），重置翻译链
+3. **链式赋值**：`pendingOriginal` 追踪上一句原文，本组第一行→赋值给上一句的 `translation`，本组最后一行→新的 `original`
+4. **最终兜底**：链尾未配对的原文保持单语
+
+**链式算法示意**：
+```
+[00:02.69] Cross my heart          ← 原文1, pendingOriginal="Cross my heart"
+[00:03.84] 胸前画十字 郑重起誓     → 赋值给原文1.translation ✓
+[00:03.84] we'll always            ← 原文2, pendingOriginal="we'll always"
+[00:04.70] 我们会永远              → 赋值给原文2.translation ✓
+```
+
+### 🎬 沉浸模式 + PiP 双行回退
+
+- **沉浸模式**：`immCurrLine`=原文，`immNextLine`=翻译（不再预告下一句），翻译行 `opacity` 从 0.7 提升到 **0.85**
+- **PiP 画中画**：`pipCurrLine`=原文，`pipNextLine`=翻译（不再显示下一句歌词），翻译行 `opacity` 设为 **0.85**，无翻译时隐藏
+
+### 📋 CSS 清理
+
+- **`immersive.css`**：移除重复 `.imm-subtitle-line` 过渡规则，翻译行颜色从 `rgba(255,255,255,0.5)` 调整为 `0.6`
+
+### ™️ 其他
+
+- **版本号更新**：`index.html`、`app.js`、版权区域统一为 v2.8.6
+
+---
+
+## v2.8.5 (2026-06-03)
+
+### 🐛 双语LRC解析重写
+
+- **Map分组算法**：`parseLyricText()` 从"两遍扫描+容差合并"重构为 Map 精确分组（按 `time.toFixed(3)` 做键），同时间戳第一行=原文、第二行=翻译，彻底解决"上一句翻译被错误合并到下一句原文"的问题
+- **`text` 字段兼容**：有翻译时 `text = original + \n + translation`，进度条预览自然显示双语
+
+### 🎬 沉浸模式歌词动画回退 + 延迟修复
+
+- **回退简单动画**：从 CSS `switching`/`active` 类+`transitionend` 回归简洁的 `el.style.opacity=0` + `setTimeout` 动画（旧版 final1.0 验证有效的方案）
+- **修复更新延迟**：`syncLyrics` 的 `activeIdx` 计算从顺序扫描 `-0.2` 偏移改为**逆序精确匹配**（从后往前找到第一个 `cur >= time`），消除约 1 秒的更新延迟
+- **不再显示下一句**：沉浸模式 `immNextLine` 改为显示翻译文本（有双语时）或无文本（单语时），不再提前展示下一句歌词
+- **移除 `lrcTransitionLock`**：清理 v2.8.4 引入的过渡锁变量及相关兜底计时器
+
+### 📐 新增歌词垂直对齐模式
+
+- **两种模式可选**：垂直居中（默认）和偏上显示（QQ音乐风格，距顶部30%）
+- **设置面板新增切换按钮**：`btnLrcAlignCenter` / `btnLrcAlignTop`，带视觉激活状态
+- **`updateLrcAlignUI()` 函数**：同步按钮状态 + 切换 `.lyrics-align-top` CSS 类
+- **持久化存储**：`lyricsAlignMode` 写入 `localStorage`（`saveSettings` / `loadSettings`）
+
+### 🎵 Crossfade 跨曲修复
+
+- **`getNextTrackIndex()` 统一选择**：提取独立函数，Shuffle 模式排除当前歌曲随机选（与 `goNext` 一致），顺序模式取下一首
+- **`triggerCrossfade()` 改用统一逻辑**：从 `Math.floor(Math.random()*length)` 改为 `getNextTrackIndex()`，交叉淡入淡出的歌曲 = 下一首实际播放的歌曲
+- **`goNext()` 防重入**：`isFading` 时直接 return，阻止 crossfade 末尾再次触发切歌导致混音
+- **`finishCrossfade()` 状态管理**：切换前清除 `audio.onended = null`，播放后延迟 1 秒重新绑定
+- **防御性检查**：`checkCrossfade` 新增 `isNaN(remaining)` / `audio.paused` / `audio.ended` 三项检查
+
+### 📋 CSS 调整
+
+- **`base-layout.css`**：双语翻译样式简化（`opacity:0.5→0.9` 过渡），新增 `.lyrics-align-top` 偏上模式样式
+- **`immersive.css`**：移除 v2.8.4 的 `.switching`/`.active` CSS 过渡类，移除 `.imm-original`/`.imm-translation` 双 span 样式
+
+### ™️ 其他
+
+- **版本号更新**：`index.html` 标题、`app.js` 文件头、版权区域版本号统一为 v2.8.5
+
+---
+
+## v2.8.4 (2026-06-03)
+
+### 🐛 双语LRC解析重构
+
+- **两遍扫描算法**：`parseLyricText()` 从"向前看一行"改为"两遍扫描"——先提取所有时间戳条目，再按时间戳分组合并（容差0.02秒），彻底消除同时间戳双语歌词被拆分为独立条目导致的重复行问题
+- **字段一致性**：合并后 `text` 保留原文（兼容单语场景），`original`/`translation` 分别存储原文和翻译
+- **歌词面板**、**沉浸模式**、**进度条预览**三者数据完全对齐，不再出现显示错乱
+
+### 🎬 沉浸模式歌词动画防频闪
+
+- **CSS transition 替代硬编码 setTimeout**：`el.style.opacity = 0` + `setTimeout` 改为 CSS `switching`/`active` 类切换，利用 `transitionend` 事件精确完成动画
+- **过渡锁 `lrcTransitionLock`**：防止快速切歌时多个 setTimeout 堆叠导致的透明度抖动
+- **300ms 兜底保护**：若 transition 未触发（元素隐藏等极端情况），自动强制完成动画
+- **新增CSS样式**：`immersive.css` 中 `.imm-subtitle-line.switching`（opacity:0 + translateY）、`.imm-subtitle-line.active`（opacity:1）过渡类
+
+### ⚡ 节能模式状态机重构
+
+- **位标志状态机**：从布尔状态 `isEnergySaving` + 多个标记变量重构为 `EnergyMode` 位标志（`NONE/ONE_CLICK/PIP_TEMP/FRAME_LIMIT/VISIBILITY`），支持多模式叠加共存
+- **`enterEnergySaving(mode)` / `exitEnergySaving(mode)`**：按位 OR 进入、按位 AND NOT 退出，精准控制每种模式的启停
+- **`applyEnergySaving(enable, triggerMode)`**：实际执行节能操作（清空粒子、释放流场、降频歌词），仅在首次进入/完全退出时触发
+- **一键节能 + 画中画叠加**：开启一键节能后打开画中画，关闭画中画后一键节能保持；`visibilitychange` 只退出 `VISIBILITY` 模式不误退其他
+- **向后兼容**：旧变量 `isEnergySaving`、`pipTempEnergySaving`、`oneClickEnergySaving` 保留并同步更新
+
+### 🎵 曲库浮窗关闭逻辑修复
+
+- **播放整张专辑**：从 `detailModal.remove(); parentModal.remove()` 改为 `safeTransition()` 统一关闭，消除 DOM 状态残留导致的浮窗无法二次打开问题
+- **曲目点击播放**：从 `detailModal.remove(); parentModal.remove()` 改为 `closeAllModals()` 标准关闭流程
+- **关闭详情动画**：点击遮罩关闭统一走 `closeDetail()` 函数，确保 `parentModal` 焦点恢复
+
+### 🎮 手柄B键退出增强
+
+- **handleGlobalClose z-index 排序**：从简单数组最后一项（DOM顺序）改为按 CSS `z-index` 排序，正确识别视觉最上层浮窗
+- **动态弹窗动画移除**：动态创建的弹窗（统计、专辑详情）关闭时先移除 `.open` 类触发过渡动画，400ms 后再移除 DOM
+- **焦点智能恢复**：关闭后延迟 50ms 调用 `updateFocusContext()`，确保焦点正确退回下层
+
+### 📋 updateFocusContext 增强
+
+- **z-index 优先级检测**：按 `z-index` 排序活跃浮窗，优先聚焦最上层浮窗内的 `.focusable` 元素
+- **无适配元素兜底**：若浮窗内无 `.focusable`，自动聚焦 `.modal-content`
+
+### ™️ 其他
+
+- **版权署名**：设置页面底部 `co-created with` 添加 QClaw
+- **版本号更新**：`index.html` 标题、`app.js` 文件头、版权区域版本号统一为 v2.8.4
+
+---
+
+## v2.8.3 (2026-06-02)
+
+### 🌏 双语LRC歌词支持
+
+- **智能双语检测**：`parseLyricText()` 自动识别同时间戳的双语歌词行（原文+翻译），合并为单条记录
+- **主界面显示优化**：原文正常高亮，翻译行以较小字号、较低透明度显示；激活时翻译跟随提升
+- **沉浸模式双语适配**：原文大字高亮，翻译行紧随其后（稍小但清晰），支持画中画模式响应式适配
+- **进度条预览合并**：`getLyricAtTime()` 返回 `"原文 | 翻译"` 格式，进度条悬停时显示双语预览
+- **新增 `escapeHtml()` 辅助函数**：防止歌词内容中的HTML标签被解析为DOM元素
+
+### 🎵 交叉淡入淡出引擎重构
+
+- **真正的双轨交叉播放**：使用 `requestAnimationFrame` 实现当前歌曲淡出、下一首淡入的平滑过渡
+- **预加载机制**：提前创建第二个 `Audio` 元素加载下一首，确保无缝切换
+- **高精度进度检测**：每100ms通过 `performance.now()` 检查播放进度，避免 `timeupdate` 精度不足问题
+- **降级兼容方案**：预加载失败时自动回退到旧版 `triggerFadeOutLegacy()` 逻辑
+- **手动切歌保护**：`playAudio()` 中强制取消正在进行的交叉淡入淡出，立即恢复标准音量
+- **修复 `once` 参数**：`triggerFadeInLegacy()` 中 `{ once: false }` 修正为 `{ once: true }`
+- **新增 `crossfadeRafId` 全局变量**：管理交叉淡入淡出的 `requestAnimationFrame` ID
+
+### 📋 其他
+
+- **版本号更新**：`index.html` 标题和 `app.js` 文件头更新至 v2.8.3
+- **新增CSS样式**：
+  - `base-layout.css`：`.lrc-line.bilingual`、`.lrc-original`、`.lrc-translation` 样式
+  - `immersive.css`：`.imm-original`、`.imm-translation` 沉浸模式双语歌词样式
+  - `components.css`：`.crossfade-indicator` 交叉淡入淡出状态指示器
+
+---
+
+## v2.8.2 (2026-06-02)
+
+### ⚡ 节能板块整合重构
+
+- **统一节能板块**：将散落的节能功能整合到"⚡ 节能模式"黄色高亮板块
+- **🔋 一键节能**：去除所有可视化动效，保持正常亮度（不添加 `pip-standby` CSS 暗黑类）
+- **🎬 画面节能**：仅将动画帧率降至 30fps，保留视觉效果（替代旧性能模式）
+- **📺 临时节能**：启动画中画时自动优化主界面性能（画中画关闭后自动退出）
+- **移除旧 UI**：EQ 面板下的性能模式按钮已整合，不再单独显示
+
+### 🔧 画中画节能状态同步修复
+
+- **`pipTempEnergySaving` 标记**：区分"画中画临时节能"和"手动节能"，关闭画中画时自动退出临时节能
+- **`visibilitychange` 修复**：标签页返回时检查画中画状态，防止意外退出节能模式
+- **`exitEnergySaving` 防御**：画中画运行时阻止退出临时节能模式
+
+### 📝 设置页面命名规范统一
+
+- **去除技术术语**：移除"核心视觉引擎"、"UI 视觉引擎"等描述
+- **统一格式**：`emoji + 简要功能名 +（快捷键）`
+- **12 处命名优化**："封面取色"、"主题色"、"背景图片"、"均衡器"、"快捷键指南"等
+- **移除设置中画中画按钮**：仅保留主界面播放器上的画中画入口
+
+### 🚀 性能优化深度改进
+
+- **Page Visibility API**：页面不可见时暂停高频渲染循环，降至 500ms 间隔心跳
+- **GPU 优化**：`Particle.draw()` / `Ripple.draw()` 用 `globalAlpha` 缓存替代 `save()/restore()`，减少 overdraw
+- **内存优化**：粒子对象池根据 `navigator.hardwareConcurrency` 动态调整（低端设备 80 vs 高端 150）
+
+### 📋 配置兼容性
+
+- 旧版 `performanceMode` → 自动映射到 `cfg.frameEnergyEnabled`
+- 旧版 `energySavingEnabled` → 自动映射到 `cfg.pipEnergyEnabled`
+- 设置数据自动迁移，无需手动重新配置
+
+---
+
+## v2.8.1 (2026-06-02)
+
+### 🔧 画中画节能模式加强
+
+- **exitEnergySaving 防御性检查**：防止在画中画激活时意外退出节能模式
+- **togglePip 状态管理优化**：关闭画中画时根据用户设置决定是否保持节能模式，画中画启动时强制进入节能模式
+- **健康检查兜底同步**：定时器关闭时也遵循节能设置
+
+### 🎬 专辑详情动画修复
+
+- **双重 requestAnimationFrame**：确保模态框 `.open` 类分帧添加，触发 CSS 弹入动画
+- **关闭动画优化**：先移除 `.open` 类触发退出动画，400ms 后再移除 DOM 节点
+
+### 🎮 手柄适配完善
+
+- **EQ 预设按钮**：添加 `.focusable` 类和 `tabIndex`，支持手柄/键盘导航
+- **activateFocus 增强**：区分专辑曲目、EQ 预设按钮等元素类型做精准处理
+- **按钮映射优化**：X 键→收藏，Y 键→循环播放模式（更符合直觉）
+- **手柄提示徽章扩展**：新增画中画按钮和设置按钮的手柄提示
+
+### 📋 设置浮窗菜单重构
+
+- **新排序**：文件 → 显示 → 音频 → 音效 → 歌词 → 其它 → 系统
+- **自定义背景整合**：从"其它"区域移至"显示"区域紧跟主题色
+- **快捷键指南更新**：同步 X/Y 键映射变更
+
+---
+
+## v2.8.0 (2026-06-01)
+
+### ⚡ 节能模式精确控制 + 沉浸舱完整停止
+
+- **渲染守卫重构**：节能ON时全局跳过所有绘制（含沉浸舱），不再有沉浸模式渲染泄漏
+- **沉浸舱强制退出**：`enterEnergySaving()` 自动退出沉浸模式，停止所有动画特效并释放 `flowField`、`particles`、`ripples` 内存
+- **主频谱Canvas清空**：节能激活时同时清空主界面频谱显示
+- **节能关 = 完整主界面**：关闭节能开关时，PiP激活也不影响主界面频谱、取色背景、流沙渲染
+
+### ⌨️ 键盘快捷键全面升级
+
+| 快捷键 | 功能 | 说明 |
+|---|---|---|
+| **Ctrl+O** | 打开文件夹载入音乐 | 最高效的载入方式 |
+| **U / F** | 收藏/取消收藏当前歌曲 | 快速标记喜爱的歌 |
+| **/** | 聚焦搜索播放列表 | 类似 YouTube 体验 |
+| **Shift+F** | 全屏开关 | F键改用于收藏 |
+| **Alt+T** | 睡眠定时器快速菜单 | 弹窗式秒设定时 |
+| **Shift+Esc** | 一键关闭所有弹窗 | 强制回到主界面 |
+
+### 🎮 手柄体验升级 — 按键指示器
+
+- **手柄接入时自动注入 ⓐⓑⓧⓨ 徽章**：播放按钮标注 ⓐ，关闭按钮标注 ⓑ，模式切换标注 ⓧ 等
+- **断开手柄自动清除**：所有徽章随手柄断开而移除
+- **曲库-专辑详情 B键**：`handleGlobalClose` LIFO栈式关闭，B键先关详情再关曲库
+- **手柄专属帮助面板**：帮助面板新增完整的游戏手柄操作指引表
+
+### 🎨 设置页面 UI 重构
+
+- **载入音乐移至设置页最顶端**：主页面更简洁，设置页首行醒目的 `📁 打开文件夹` 按钮
+- **专辑封面取色模式提升为视觉核心**：独立取色引擎板块，状态标签实时显示激活状态，配色预览条
+- **预设主题色归入 UI 视觉引擎**：取色模式开启时覆盖所有预设主题，关闭时预设主题复活
+- **深色模式 + 背景模糊独立为视觉调节板块**
+
+### 🩹 修复
+
+- **专辑详情弹入动画**：`.album-detail-panel` 新增 `scale(0.9)→scale(1)` 弹簧动画，与所有弹窗一致
+- **专辑详情手柄导航**：`updateFocusContext` 正确检测 `.album-detail-panel` 内 `focusable` 元素
+- **空状态提示更新**：移除已不存在的"载入音乐"按钮引用，改为 Ctrl+O 提示
+
+---
+
+## v2.7.0-preview2 (2026-06-01)
+
+### 🧹 内存优化 — 杜绝泄漏
+
+- **P0: Blob URL 彻底回收**：`releaseAllBlobUrls()` 新增强制遍历 `playlist` 和 `musicLibrary`，释放所有残留的 `blob:` URL，每次载入新文件夹时旧音乐资源完全回收，内存不再随切换堆积
+- **P1: 沉浸模式流场释放**：退出沉浸模式时将 `flowField` 置为空数组，大数组立即进入 GC 可回收状态
+- **P1: PiP 定时器兜底清理**：`pipSyncInterval` 提升为模块级变量，关闭 PiP 时显式 `clearInterval`；新增 10 秒健康检查 `pipHealthCheck`，即使 PiP 窗口被操作系统外部关闭也能彻底清除定时器
+- **P2: 播放历史限制**：`playHistory` 数组最大长度限制为 200，防止长时间播放后历史无限增长
+- **P3: 统计面板闭包清理**：`showStatsPanel` 关闭时将 `modal` 引用置为 `null`，防止闭包循环引用
+
+### 🩹 修复
+
+- **曲库专辑详情页面**：修复 `renderAlbumGrid`/`renderArtistGrid`/`renderRecentGrid` 中 `modal` 变量作用域丢失问题，`modal` 现在作为参数显式传递，专辑详情面板恢复正常，点击专辑卡片可正确打开详情
+
+---
+
 ## v2.6.0 (2026-06-01)
 
 ### 🎬 弹窗关闭动画回归 — 渐进式消失

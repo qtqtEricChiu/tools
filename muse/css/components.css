@@ -1,0 +1,301 @@
+/* ================= 6. 均衡器面板 ================= */
+.eq-panel { display: flex; flex-direction: column; gap: 12px; }
+.eq-band { display: flex; align-items: center; gap: 10px; }
+.eq-band label { width: 60px; font-size: 12px; color: var(--text-sub); text-align: right; flex-shrink: 0; }
+.eq-band input { flex: 1; }
+.eq-band .eq-val { width: 40px; font-size: 12px; color: var(--primary); text-align: right; flex-shrink: 0; }
+.eq-preset-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.eq-preset-btn {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main);
+    padding: 6px 14px; border-radius: 10px; cursor: pointer; font-size: 12px; transition: 0.3s;
+}
+.eq-preset-btn:hover { border-color: var(--primary); background: rgba(255,255,255,0.12); }
+.eq-preset-btn.active { background: var(--primary); color: #000; border-color: var(--primary); }
+
+/* ================= 7. 画中画Tiny播放器 (v2.2 重构) ================= */
+.pip-container {
+    position: relative; width: 100vw; height: 100vh;
+    overflow: hidden; font-family: 'OPPO Sans 4.0', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    user-select: none; display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    background: #0a0a1a; min-width: 240px; min-height: 120px;
+}
+.pip-bg {
+    position: absolute; inset: -20px; z-index: 0;
+    background-size: cover; background-position: center;
+    filter: blur(50px) brightness(0.4); transform: scale(1.1);
+    animation: pipBgBreath 8s ease-in-out infinite;
+}
+@keyframes pipBgBreath {
+    0%, 100% { transform: scale(1.1); }
+    50% { transform: scale(1.15); }
+}
+.pip-bg::after {
+    content: ''; position: absolute; inset: 0;
+    background: rgba(10, 10, 26, 0.35);
+}
+.pip-fallback {
+    display: flex; align-items: center; gap: 16px; z-index: 2; padding: 20px;
+    width: 100%; max-width: 400px;
+}
+.pip-vinyl {
+    width: 64px; height: 64px; border-radius: 50%; overflow: hidden;
+    flex-shrink: 0; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    border: 3px solid rgba(255,255,255,0.1); 
+    animation: pipVinylSpin 12s linear infinite;
+}
+@keyframes pipVinylSpin { to { transform: rotate(360deg); } }
+.pip-vinyl img { width: 100%; height: 100%; object-fit: cover; }
+.pip-fallback-info { flex: 1; min-width: 0; }
+.pip-fallback-title {
+    font-size: 16px; font-weight: 700; color: #fff; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.pip-fallback-artist {
+    font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pip-lyrics-wrap {
+    position: relative; z-index: 2; text-align: center; padding: 24px;
+    display: flex; flex-direction: column; gap: 16px;
+    align-items: center; justify-content: center; flex: 1;
+    width: 100%; max-width: 600px;
+}
+.pip-line-current {
+    font-size: clamp(18px, 4vw, 28px); font-weight: 800; color: #fff;
+    line-height: 1.3; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6), 0 0 30px rgba(255,255,255,0.15);
+    opacity: 1; transform: translateY(0);
+    max-width: 100%; word-break: break-word;
+}
+.pip-line-current.fade-out {
+    opacity: 0; transform: translateY(-20px);
+}
+.pip-line-next {
+    font-size: clamp(13px, 2.5vw, 17px); font-weight: 600; color: rgba(255,255,255,0.45);
+    line-height: 1.3; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    text-shadow: 0 1px 6px rgba(0,0,0,0.4);
+    opacity: 0.6; transform: translateY(0);
+    max-width: 100%; word-break: break-word;
+}
+.pip-line-next.fade-out {
+    opacity: 0; transform: translateY(-20px);
+}
+.pip-controls-overlay {
+    position: absolute; inset: 0; z-index: 5;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; opacity: 0; pointer-events: none;
+    transition: opacity 0.35s ease;
+}
+.pip-container:hover .pip-controls-overlay,
+.pip-container.show-controls .pip-controls-overlay {
+    opacity: 1; pointer-events: auto;
+}
+.pip-track-info {
+    font-size: 15px; color: rgba(255,255,255,0.8); font-weight: 600;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5); text-align: center;
+    padding: 0 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
+}
+.pip-btn-group {
+    display: flex; align-items: center; gap: 20px;
+}
+.pip-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1);
+    color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; transition: all 0.25s ease; backdrop-filter: blur(10px);
+}
+.pip-btn:hover { background: rgba(255,255,255,0.25); transform: scale(1.1); border-color: #fff; }
+.pip-btn.pip-play-btn { width: 56px; height: 56px; font-size: 24px; background: rgba(255,255,255,0.2); }
+.pip-btn.pip-fav-btn { border-color: rgba(255,107,107,0.4); }
+.pip-btn.pip-fav-btn:hover { background: rgba(255,107,107,0.3); border-color: #ff6b6b; }
+.pip-btn.pip-fav-btn.faved { background: rgba(255,107,107,0.4); border-color: #ff6b6b; color: #ff6b6b; }
+.pip-progress-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 3;
+    height: 3px; background: rgba(255,255,255,0.1);
+}
+.pip-progress-fill {
+    height: 100%; background: var(--primary, #9ac8e2);
+    transition: width 0.3s linear; border-radius: 0 2px 2px 0;
+    box-shadow: 0 0 8px rgba(154,200,226,0.4);
+}
+@media (min-aspect-ratio: 2/1) {
+    .pip-lyrics-wrap { flex-direction: row; gap: 12px; text-align: left; padding: 16px 24px; }
+    .pip-line-current { font-size: clamp(15px, 2.5vw, 22px); }
+    .pip-line-next { font-size: clamp(11px, 1.5vw, 15px); }
+}
+
+/* === v2.8: 手柄按键提示徽章 === */
+.gamepad-badge {
+    display: none;
+    position: absolute;
+    top: -8px; right: -6px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.85);
+    border: 1.5px solid var(--primary);
+    color: var(--primary);
+    font-size: 10px;
+    font-weight: 900;
+    text-align: center;
+    line-height: 16px;
+    z-index: 60;
+    pointer-events: none;
+    font-family: monospace;
+}
+.gamepad-connected .gamepad-badge { display: block; }
+.gamepad-badge.pad-a { background: rgba(0,200,80,0.2); border-color: #0c8; color: #0f8; }
+.gamepad-badge.pad-b { background: rgba(255,80,80,0.2); border-color: #f55; color: #f44; }
+.gamepad-badge.pad-x { background: rgba(80,140,255,0.2); border-color: #58f; color: #59f; }
+.gamepad-badge.pad-y { background: rgba(255,200,50,0.2); border-color: #fc3; color: #fb3; }
+.gamepad-badge.pad-lb { border-radius: 4px; width: 22px; }
+.gamepad-badge.pad-rb { border-radius: 4px; width: 22px; }
+
+/* === v2.8: 手柄接入时主界面按钮标注 === */
+.gamepad-key-hint {
+    display: none; position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; color: var(--primary); white-space: nowrap; opacity: 0.7;
+    font-family: monospace; font-weight: 700; pointer-events: none;
+}
+.gamepad-connected .gamepad-key-hint { display: block; }
+
+/* ================= 8. 统计面板 ================= */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.stat-card {
+    background: rgba(255,255,255,0.04); border-radius: 14px; padding: 16px;
+    border: 1px solid rgba(255,255,255,0.05); text-align: center;
+}
+.stat-card .stat-value { font-size: 28px; font-weight: 800; color: var(--primary); }
+.stat-card .stat-label { font-size: 12px; color: var(--text-sub); margin-top: 4px; }
+.stat-top-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.stat-top-item { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+.stat-top-item .rank { width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #000; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.stat-top-item .song-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-top-item .play-count { font-size: 12px; color: var(--text-sub); }
+
+/* ================= 9. 睡眠定时器 ================= */
+.sleep-timer-display { font-size: 14px; color: var(--text-sub); display: flex; align-items: center; gap: 6px; }
+.sleep-timer-display.active { color: var(--primary); }
+.sleep-timer-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ================= 10. 播放速度/音调 ================= */
+.speed-pitch-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.speed-pitch-row label { font-size: 13px; color: var(--text-sub); width: 50px; flex-shrink: 0; }
+.speed-pitch-row input { flex: 1; }
+.speed-pitch-row .val { width: 45px; font-size: 13px; color: var(--primary); text-align: right; flex-shrink: 0; }
+
+/* ================= 11. 移动端优化 ================= */
+@media (max-width: 768px) {
+    .header { padding: 16px 20px; }
+    .brand { font-size: 18px; }
+    .nav-actions { gap: 8px; }
+    .btn-glass { padding: 8px 12px; font-size: 12px; gap: 4px; }
+    .content-grid { flex-direction: column; overflow-y: auto; padding: 16px; align-items: center; gap: 20px; }
+    .col-album { flex: 0 0 auto; width: 100%; max-width: 340px; }
+    .col-controls { flex: 0 0 auto; width: 100%; max-width: 400px; }
+    .col-lyrics { flex: 0 0 auto; width: 100%; max-width: 400px; min-height: 300px; mask-image: none; -webkit-mask-image: none; }
+    .player-wrapper { width: 100vw; height: 100vh; border-radius: 0; border: none; }
+    .art-box { width: 260px; height: 260px; }
+    .imm-bottom { flex-direction: column; gap: 15px; padding: 20px; }
+    .imm-bottom .vol-control { display: none; }
+    .theme-preset-grid { grid-template-columns: repeat(5, 1fr); }
+    .track-title { font-size: 24px; }
+    .track-artist { font-size: 15px; }
+    .footer { padding: 12px 20px; font-size: 11px; }
+    .btn-group-main { gap: 14px; }
+    .btn-ctrl { width: 48px; height: 48px; font-size: 16px; }
+    .btn-play { width: 64px; height: 64px; font-size: 26px; }
+    .btn-fav-ctrl, .btn-pip-ctrl { width: 42px !important; height: 42px !important; font-size: 15px !important; }
+    .vol-control { margin-left: 12px; padding: 8px 12px; }
+    .cover-album-group { width: 110px; padding: 8px; }
+    .cover-album-art { width: 75px; height: 75px; }
+    .search-input { font-size: 13px; padding: 8px 12px; }
+}
+
+@media (max-width: 480px) {
+    .header { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
+    .brand { font-size: 16px; }
+    .nav-actions { flex-wrap: wrap; gap: 6px; }
+    .btn-glass { padding: 6px 10px; font-size: 11px; border-radius: 10px; }
+    .art-box { width: 200px; height: 200px; border-radius: 20px; }
+    .track-title { font-size: 20px; }
+    .track-artist { font-size: 13px; }
+    .btn-group-main { gap: 10px; }
+    .btn-ctrl { width: 40px; height: 40px; font-size: 14px; }
+    .btn-play { width: 52px; height: 52px; font-size: 22px; }
+    .btn-fav-ctrl, .btn-pip-ctrl { width: 36px !important; height: 36px !important; font-size: 13px !important; }
+    .btn-group-sub { flex-wrap: wrap; gap: 8px; }
+    .vol-control { margin-left: 0; width: 100%; }
+    .cover-album-group { width: 90px; padding: 6px; }
+    .cover-album-art { width: 60px; height: 60px; }
+}
+
+/* ================= 12. Toggle 开关 (v2.7 节能模式) ================= */
+.toggle-switch {
+    position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;
+}
+.toggle-switch input { display: none; }
+.toggle-slider {
+    position: absolute; inset: 0; cursor: pointer; background: rgba(255,255,255,0.15);
+    border-radius: 24px; transition: all 0.3s var(--curve-smooth);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.toggle-slider::before {
+    content: ''; position: absolute; height: 18px; width: 18px;
+    left: 2px; bottom: 2px; background: #fff; border-radius: 50%;
+    transition: transform 0.3s var(--curve-spring);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--primary); border-color: var(--primary); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+/* ================= v2.6: PiP 微待机省电模式 ================= */
+.player-wrapper.pip-standby {
+    pointer-events: none !important;
+    opacity: 0.35 !important;
+    transition: opacity 0.6s var(--curve-smooth) !important;
+}
+.player-wrapper.pip-standby .art-box {
+    animation: none !important;
+}
+.player-wrapper.pip-standby .bg-layer-color,
+.player-wrapper.pip-standby .bg-layer-img {
+    opacity: 0.15 !important;
+    transition: opacity 0.6s var(--curve-smooth) !important;
+}
+.player-wrapper.pip-standby canvas {
+    opacity: 0 !important;
+    transition: opacity 0.6s var(--curve-smooth) !important;
+}
+.player-wrapper.pip-standby .btn-pip-ctrl {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    animation: pipStandbyPulse 2s ease-in-out infinite;
+}
+@keyframes pipStandbyPulse {
+    0%, 100% { box-shadow: 0 0 8px var(--primary-glow); }
+    50% { box-shadow: 0 0 20px var(--primary-glow), 0 0 40px var(--primary); }
+}
+
+/* 🚀 v2.8.3: 交叉淡入淡出状态指示器 */
+.crossfade-indicator {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(10px);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--primary);
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 100;
+}
+.crossfade-indicator.active {
+    opacity: 1;
+}
