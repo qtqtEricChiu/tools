@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MBolka Player - Ultimate Nexus v2.6.0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- PWA Manifest (动态注入) -->
+    <script>
+        // 动态注入 Manifest
+        const manifest = {
+            name: 'MBolka Player',
+            short_name: 'MBolka',
+            description: 'Ultimate Local Music Player',
+            start_url: '.',
+            display: 'standalone',
+            background_color: '#0a0a1a',
+            theme_color: '#9ac8e2',
+            icons: [{
+                src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192"><rect width="192" height="192" rx="32" fill="#0a0a1a"/><text x="96" y="120" font-size="96" text-anchor="middle" fill="#9ac8e2">♪</text></svg>'),
+                sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable'
+            }]
+        };
+        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blob);
+        const link = document.createElement('link');
+        link.rel = 'manifest'; link.href = manifestURL;
+        document.head.appendChild(link);
+
+        // Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('install', e => self.skipWaiting());
+                self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+                self.addEventListener('fetch', e => {
+                    e.respondWith(fetch(e.request).catch(() => new Response('Offline')));
+                });
+            `;
+            const swBlob = new Blob([swCode], {type: 'application/javascript'});
+            navigator.serviceWorker.register(URL.createObjectURL(swBlob));
+        }
+    </script>
+</head>
+<body>
+
+    <!-- 动态背景层 -->
+    <div id="bg-layer-img"></div>
+    <canvas id="bg-layer-color"></canvas>
+
+    <!-- 沉浸模式粒子频谱背景 -->
+    <canvas id="immersive-bg-canvas"></canvas>
+
+    <!-- ================= 视图 1：主界面 ================= -->
+    <div class="view-container" id="view-main">
+        <div class="player-wrapper">
+            <div class="header">
+                <div class="brand"><i id="logoIcon">♪</i> MBolka Player</div>
+                <div class="nav-actions">
+                    <button class="btn-glass focusable" id="btnToggleList"><i>📃</i> 列表</button>
+                    <button class="btn-glass focusable" id="btnToggleLrc"><i>📝</i> 歌词</button>
+                    <button class="btn-glass focusable" id="btnCoverLibrary" title="曲库"><i>🖼️</i> 曲库</button>
+                    <button class="btn-glass focusable" id="btnSettings"><i>⚙️</i> 设置</button>
+                    <button class="btn-glass focusable" id="btnLoadFolder" style="background: var(--primary); color: var(--text-on-primary); border:none;"><i>📁</i> 载入音乐</button>
+                    <input type="file" id="folderInput" webkitdirectory directory multiple>
+                </div>
+            </div>
+
+            <div class="load-strip-container" id="loadWrap"><div class="load-strip" id="loadBar"></div></div>
+
+            <div class="content-grid" style="position:relative;">
+                <!-- 空状态引导 -->
+                <div class="empty-state" id="emptyState">
+                    <div class="icon-wrap">🎵</div>
+                    <p>拖拽音乐文件夹到此处</p>
+                    <p class="sub">或点击右上角"载入音乐"按钮</p>
+                    <p class="sub" style="font-size:11px;">支持 MP3 / FLAC / WAV / M4A / OGG + LRC / CUE</p>
+                </div>
+
+                <!-- 左侧：专辑 -->
+                <div class="col col-album" id="main-col-album">
+                    <div class="art-box" id="artBox">
+                        <img id="main-artImg" class="art-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQwIiBoZWlnaHQ9IjM0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTJlIi8+PC9zdmc+">
+                    </div>
+                    <div class="track-info">
+                        <div class="track-title" id="main-songTitle">MBolka Player Ultimate</div>
+                        <div class="track-artist" id="main-songArtist">等待载入音乐...</div>
+                    </div>
+                </div>
+
+                <!-- 中部：控制 -->
+                <div class="col col-controls">
+                    <div class="vis-canvas-container focusable" id="btnEnterImmersive" title="点击或按 I 键 / 手柄十字键下 进入沉浸模式">
+                        <canvas id="spectrumCanvasMain"></canvas>
+                        <div class="vis-hint">点击进入沉浸舱</div>
+                    </div>
+                    <div>
+                        <div class="progress-area" id="main-progArea">
+                            <div class="prog-bg"><div class="prog-fill" id="main-progFill"></div></div>
+                            <div class="ab-marker a" id="main-abMarkerA" style="display:none;"></div>
+                            <div class="ab-marker b" id="main-abMarkerB" style="display:none;"></div>
+                            <div class="ab-range" id="main-abRange" style="display:none;"></div>
+                            <div class="prog-hover-tip" id="main-progTip"></div>
+                        </div>
+                        <div class="time-labels">
+                            <span id="timeCur">0:00</span><span id="timeTot">0:00</span>
+                        </div>
+                    </div>
+                    <div class="btn-group-main">
+                        <button class="btn-ctrl btn-fav-ctrl focusable" id="btnFavQuick" title="收藏 (当前歌曲)">❤️</button>
+                        <button class="btn-ctrl focusable" id="btnPrev">⏮</button>
+                        <button class="btn-ctrl btn-play focusable" id="btnPlay">▶</button>
+                        <button class="btn-ctrl focusable" id="btnNext">⏭</button>
+                        <button class="btn-ctrl btn-pip-ctrl focusable" id="btnPipQuick" title="画中画悬浮窗">📺</button>
+                    </div>
+                    <div class="btn-group-sub">
+                        <button class="btn-mode focusable" id="btnModeToggle" title="播放模式: 顺序 → 随机 → 单曲循环">⇄ 顺序</button>
+                        <div class="vol-control">
+                            <span>🔊</span>
+                            <input type="range" id="volSlider" class="focusable" min="0" max="1" step="0.01" value="0.7" title="键盘上下 / 手柄LT RT调节">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：歌词 -->
+                <div class="col col-lyrics" id="lrcPanel" style="display: none;">
+                    <div class="lrc-viewport" id="lrcViewport">
+                        <div class="lrc-line" style="opacity: 0.5;">载入歌曲后显示歌词</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                <div id="fileInfo">就绪</div>
+                <div style="display:flex;align-items:center;gap:16px;">
+                    <span id="sleepTimerDisplay" class="sleep-timer-display">🌙 定时</span>
+                    <span id="gamepadStatus">⌨️ 等待手柄接入...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 视图 2：沉浸模式 ================= -->
+    <div class="view-container hidden" id="view-immersive">
+        <div class="imm-wrapper">
+            <div class="imm-topbar">
+                <div class="imm-track-card" id="imm-trackCard">
+                    <div class="imm-album-art"><img id="imm-artImg" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iIzFhMWEyZSIvPjwvc3ZnPg=="></div>
+                    <div class="track-info" style="text-align: left;">
+                        <div class="track-title" id="imm-songTitle" style="font-size: 22px; margin-bottom:4px;">沉浸式音乐舱</div>
+                        <div class="track-artist" id="imm-songArtist" style="font-size: 16px; color: var(--primary);">就绪</div>
+                    </div>
+                </div>
+                <div class="imm-header-actions">
+                    <button class="imm-icon-btn focusable" id="btnExitImmersive" title="返回主界面 (Esc / 十字键下)">✖</button>
+                </div>
+            </div>
+
+            <div class="imm-lyrics-center" id="imm-lyricsCenter">
+                <div class="imm-subtitle">
+                    <div class="imm-subtitle-line" id="imm-currLine">请载入本地音乐以开始</div>
+                    <div class="imm-subtitle-line next" id="imm-nextLine"></div>
+                </div>
+            </div>
+
+            <div class="imm-bottom">
+                <div class="btn-group-main" style="gap: 16px;">
+                    <button class="btn-ctrl focusable" id="imm-btnPrev" style="width:50px; height:50px; font-size:16px;">⏮</button>
+                    <button class="btn-ctrl btn-play focusable" id="imm-btnPlay" style="width:64px; height:64px; font-size:24px;">▶</button>
+                    <button class="btn-ctrl focusable" id="imm-btnNext" style="width:50px; height:50px; font-size:16px;">⏭</button>
+                </div>
+                <div style="flex: 1;">
+                    <div class="progress-area" id="imm-progArea">
+                        <div class="prog-bg"><div class="prog-fill" id="imm-progFill"></div></div>
+                        <div class="ab-marker a" id="imm-abMarkerA" style="display:none;"></div>
+                        <div class="ab-marker b" id="imm-abMarkerB" style="display:none;"></div>
+                        <div class="ab-range" id="imm-abRange" style="display:none;"></div>
+                        <div class="prog-hover-tip" id="imm-progTip"></div>
+                    </div>
+                </div>
+                <button class="btn-mode focusable" id="imm-btnMode" title="播放模式">⇄</button>
+            </div>
+        </div>
+        <!-- 沉浸模式退出箭头 -->
+        <div class="imm-exit-hint" id="immExitHint" title="点击返回 / 双击空白区退出">▼</div>
+    </div>
+
+    <!-- ================= 右键菜单 ================= -->
+    <div class="context-menu" id="contextMenu">
+        <div class="ctx-item" data-action="play">▶ 播放</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item" data-action="info">ℹ️ 文件信息</div>
+        <div class="ctx-item" data-action="favorite">❤️ 收藏/取消</div>
+        <div class="ctx-divider"></div>
+        <div class="ctx-item danger" data-action="remove">🗑️ 从列表移除</div>
+        <div class="ctx-item danger" data-action="clear">🚫 清空列表</div>
+    </div>
+
+    <!-- ================= 弹窗组件 ================= -->
+    <!-- ================= 静态曲库弹窗 ================= -->
+    <div class="modal-overlay" id="coverLibraryModal">
+        <div class="modal-content" style="width: 750px; max-width: 95vw; max-height: 88vh; padding: 24px;">
+            <div class="cover-lib-header">
+                <h2 style="font-size:20px;">🖼️ 曲库</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-glass focusable" id="btnImportPlaylist" style="font-size:12px;" title="导入播放列表JSON">📥 导入</button>
+                    <button class="btn-glass focusable" id="btnCloseCoverLib" style="padding: 6px 12px;">关闭 (B/Esc)</button>
+                </div>
+            </div>
+            <div class="cover-lib-tabs">
+                <button class="cover-lib-tab focusable active" data-mode="album" tabindex="0">📀 按专辑</button>
+                <button class="cover-lib-tab focusable" data-mode="artist" tabindex="0">🎤 按艺术家</button>
+                <button class="cover-lib-tab focusable" data-mode="recent" tabindex="0">🕐 最近添加</button>
+            </div>
+            <div class="search-container">
+                <input type="text" class="search-input" id="coverLibSearch" placeholder="🔍 搜索专辑/艺术家...">
+            </div>
+            <div class="cover-lib-grid" id="coverLibGrid"></div>
+        </div>
+    </div>
+
+    <!-- 播放列表弹窗 -->
+    <div class="modal-overlay" id="playlistModal">
+        <div class="modal-content" style="height: 65vh;">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;" id="playlistModalTitle">播放列表</h2>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-glass focusable" id="btnShowAll" style="font-size:13px;">📋 全部</button>
+                    <button class="btn-glass focusable" id="btnShowFavorites" style="font-size:13px;">❤️ 收藏</button>
+                    <button class="btn-glass focusable" id="btnShowCoverWall" style="font-size:13px;">🖼️ 曲库</button>
+                    <button class="btn-glass focusable" id="btnCloseList" style="padding: 6px 12px;">关闭 (B/Esc)</button>
+                </div>
+            </div>
+            <!-- 搜索框 -->
+            <div class="search-container">
+                <input type="text" class="search-input" id="searchInput" placeholder="🔍 搜索标题/艺术家/专辑...">
+                <button class="btn-glass" id="btnExportM3U" style="font-size:12px;padding:8px 12px;" title="导出 M3U">📥 M3U</button>
+                <button class="btn-glass" id="btnExportJSON" style="font-size:12px;padding:8px 12px;" title="导出 JSON">📥 JSON</button>
+            </div>
+            <!-- 封面墙视图 -->
+            <div class="cover-wall-container" id="coverWallContainer" style="display:none;"></div>
+            <!-- 列表视图 -->
+            <div class="playlist-items" id="playlistContainer">
+                <div style="color:var(--text-sub); text-align:center; padding:20px;">空空如也</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-content" style="max-height:90vh;">
+            <div class="modal-header">
+                <h2 style="font-size: 20px;">系统与操作设置</h2>
+                <button class="btn-glass focusable" id="btnCloseSettings" style="padding: 6px 12px;">关闭 (B/Esc)</button>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🎨 预设主题色</div>
+                <div class="theme-preset-grid" id="themePresetGrid"></div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🎛 十段均衡器 (EQ)</div>
+                <div id="eqPanelContainer"></div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">UI 视觉引擎</div>
+                <button class="btn-glass focusable" id="btnToggleColorMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">开启取色模式 (Y / C)</button>
+                <button class="btn-glass focusable" id="btnToggleDarkMode" style="width: 100%; justify-content: center; margin-bottom: 15px;">🌙 深色模式</button>
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px;">背景模糊强度: <span id="blurVal">40px</span></div>
+                <input type="range" class="focusable" id="blurSlider" min="0" max="100" value="40">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">📝 歌词显示调节</div>
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 4px;">字号: <span id="lrcFontSizeVal">18px</span></div>
+                <input type="range" class="focusable" id="lrcFontSizeSlider" min="12" max="32" value="18" style="margin-bottom:12px;">
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 4px;">行距: <span id="lrcLineHeightVal">2.2</span></div>
+                <input type="range" class="focusable" id="lrcLineHeightSlider" min="1.2" max="3.5" step="0.1" value="2.2" style="margin-bottom:12px;">
+                <div style="font-size: 13px; color: var(--text-sub); margin-bottom: 8px;">对齐方式:</div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-glass focusable lrc-align-btn active" data-align="center" style="flex:1;justify-content:center;">居中</button>
+                    <button class="btn-glass focusable lrc-align-btn" data-align="left" style="flex:1;justify-content:center;">左对齐</button>
+                </div>
+                <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <span style="font-size:13px;color:var(--text-sub);">⏱ 歌词偏移:</span>
+                    <button class="btn-glass" id="btnLrcOffsetMinusFine" style="padding:6px 10px;">-0.1s</button>
+                    <button class="btn-glass" id="btnLrcOffsetMinus" style="padding:6px 12px;">-0.5s</button>
+                    <span id="lrcOffsetVal" style="font-size:13px;color:var(--primary);">0.0s</span>
+                    <button class="btn-glass" id="btnLrcOffsetPlus" style="padding:6px 12px;">+0.5s</button>
+                    <button class="btn-glass" id="btnLrcOffsetPlusFine" style="padding:6px 10px;">+0.1s</button>
+                </div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🌙 睡眠定时器</div>
+                <div class="sleep-timer-btns">
+                    <button class="btn-glass" id="btnSleep15">15分钟</button>
+                    <button class="btn-glass" id="btnSleep30">30分钟</button>
+                    <button class="btn-glass" id="btnSleep60">60分钟</button>
+                    <button class="btn-glass" id="btnSleepCancel">取消</button>
+                </div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🖼️ 画中画 & 功能</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn-glass focusable" id="btnTogglePip" style="flex:1;justify-content:center;">📺 画中画 (Q)</button>
+                    <button class="btn-glass focusable" id="btnShowStats" style="flex:1;justify-content:center;">📊 统计 (T)</button>
+                </div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">📋 调试与日志</div>
+                <button class="btn-glass focusable" id="btnExportLogs" style="width:100%;justify-content:center;">📋 导出调试日志</button>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">自定义背景 (优先)</div>
+                <button class="btn-glass focusable" id="btnSetBg" style="width: 100%; justify-content: center; margin-bottom: 10px;">上传本地图片</button>
+                <button class="btn-glass focusable" id="btnClearBg" style="width: 100%; justify-content: center; color: #ff6b6b; border-color: rgba(255,107,107,0.3);">恢复默认逻辑</button>
+                <input type="file" id="bgInput" accept="image/*">
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">全域操作指南 (键盘 & 手柄)</div>
+                <div class="hotkey-grid">
+                    <span><kbd>Space</kbd> / <kbd class="pad">A键</kbd></span> <span>播放 / 暂停 / 确认选定项</span>
+                    <span><kbd>← / →</kbd> / <kbd class="pad">LB / RB</kbd></span> <span>上一曲 / 下一曲</span>
+                    <span><kbd>↑ / ↓</kbd> / <kbd class="pad">LT / RT</kbd></span> <span>音量加减</span>
+                    <span><kbd>J / K</kbd> / <kbd class="pad">十字 左/右</kbd></span> <span>快退 / 快进 10秒</span>
+                    <span><kbd>I</kbd> / <kbd class="pad">十字 下</kbd></span> <span><b>切换沉浸舱模式</b></span>
+                    <span><kbd>S / M / R</kbd> / <kbd class="pad">X键</kbd></span> <span>三态切换: 顺序 → 随机 → 单曲循环</span>
+                    <span><kbd>C</kbd> / <kbd class="pad">Y键</kbd></span> <span>开关取色模式</span>
+                    <span><kbd>L / P</kbd> / <kbd class="pad">十字 上</kbd></span> <span>开关歌词 / 播放列表</span>
+                    <span><kbd>WASD</kbd> / <kbd class="pad">左摇杆</kbd></span> <span><b>UI 焦点导航 (脱离鼠标)</b></span>
+                    <span><kbd>Esc</kbd> / <kbd class="pad">B键</kbd></span> <span>关闭弹窗 / 退出沉浸</span>
+                    <span><kbd>F</kbd> / <kbd class="pad">View</kbd></span> <span>全屏开关</span>
+                    <span><kbd>T</kbd></span> <span>统计面板</span>
+                    <span><kbd>G</kbd></span> <span>曲库</span>
+                    <span><kbd>Q</kbd></span> <span>画中画</span>
+                    <span><kbd>?</kbd></span> <span><b>快捷键帮助面板</b></span>
+                </div>
+            </div>
+            <div style="text-align: center; color: var(--text-sub); font-size: 12px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); margin-top: 20px;">
+                ©MocaBolka 2026 v2.5.0<br/>co-created with DeepSeek@Tencent Yuanbao, Gemini 3.1 Pro Preview, CodeBuddy
+            </div>
+        </div>
+    </div>
+
+    <!-- 文件信息弹窗 -->
+    <div class="modal-overlay" id="fileInfoModal">
+        <div class="modal-content" style="width:420px;">
+            <div class="modal-header">
+                <h2 style="font-size:18px;">📄 文件信息</h2>
+                <button class="btn-glass focusable" id="btnCloseFileInfo" style="padding:6px 12px;">关闭</button>
+            </div>
+            <div id="fileInfoContent" style="font-size:14px; line-height:2; color:var(--text-sub);"></div>
+        </div>
+    </div>
+
+    <!-- 帮助面板 -->
+    <div class="modal-overlay" id="helpModal">
+        <div class="modal-content" style="width:580px; max-height:80vh;">
+            <div class="modal-header">
+                <h2 style="font-size:20px;">⌨️ 快捷键大全</h2>
+                <button class="btn-glass focusable" id="btnCloseHelp" style="padding:6px 12px;">关闭 (Esc)</button>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🎵 播放控制</div>
+                <div class="hotkey-grid">
+                    <span><kbd>Space</kbd> / <kbd class="pad">A键</kbd></span><span>播放 / 暂停</span>
+                    <span><kbd>← / →</kbd> / <kbd class="pad">LB / RB</kbd></span><span>上一曲 / 下一曲</span>
+                    <span><kbd>↑ / ↓</kbd> / <kbd class="pad">LT / RT</kbd></span><span>音量加减</span>
+                    <span><kbd>J / K</kbd> / <kbd class="pad">十字 左/右</kbd></span><span>快退 / 快进 10秒</span>
+                    <span><kbd>S / M / R</kbd> / <kbd class="pad">X键</kbd></span><span>播放模式: 顺序→随机→单曲循环</span>
+                    <span><kbd>A+B</kbd> (长按播放键)</span><span>A-B段落重复</span>
+                </div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🖥️ 界面导航</div>
+                <div class="hotkey-grid">
+                    <span><kbd>I</kbd> / <kbd class="pad">十字 下</kbd></span><span>切换沉浸模式</span>
+                    <span><kbd>Esc</kbd> / <kbd class="pad">B键</kbd></span><span>关闭弹窗 / 退出沉浸</span>
+                    <span><kbd>F</kbd> / <kbd class="pad">View</kbd></span><span>全屏开关</span>
+                    <span><kbd>L</kbd></span><span>开关歌词面板</span>
+                    <span><kbd>P</kbd> / <kbd class="pad">十字 上</kbd></span><span>打开播放列表</span>
+                    <span><kbd>C</kbd> / <kbd class="pad">Y键</kbd></span><span>取色模式切换</span>
+                    <span><kbd>D</kbd></span><span>深色/护眼模式</span>
+                    <span><kbd>T</kbd></span><span>统计面板</span>
+                    <span><kbd>G</kbd></span><span>曲库</span>
+                    <span><kbd>Q</kbd></span><span>画中画</span>
+                    <span><kbd>?</kbd></span><span>快捷键帮助面板</span>
+                    <span><kbd>WASD</kbd> / <kbd class="pad">左摇杆</kbd></span><span>UI焦点导航</span>
+                </div>
+            </div>
+            <div class="drawer-box">
+                <div class="drawer-title">🖱️ 鼠标/触屏操作</div>
+                <div class="hotkey-grid">
+                    <span>右键播放列表项</span><span>上下文菜单(播放/删除/信息)</span>
+                    <span>拖拽播放列表项</span><span>调整播放顺序</span>
+                    <span>长按播放按钮</span><span>A-B段落重复模式</span>
+                    <span>进度条悬停</span><span>预览该时间点歌词</span>
+                    <span>专辑封面左右滑动</span><span>切换上/下一首</span>
+                    <span>双击屏幕左侧</span><span>快退10秒</span>
+                    <span>双击屏幕右侧</span><span>快进10秒</span>
+                    <span>沉浸模式双击空白区</span><span>退出沉浸模式</span>
+                    <span>沉浸模式鼠标移动</span><span>粒子跟随互动</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toastMsg"></div>
+
+    <!-- 主应用逻辑 -->
+    <script src="js/app.js"></script>
+
+    <!-- 所有事件绑定已统一收进 app.js 的 load 初始化中 -->
+</body>
+</html>
